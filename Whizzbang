@@ -91,10 +91,12 @@ local WhizConfig = {
     Fullbright         = false,
     NoFog              = false,
     NoLag              = false,
+    RenderDistanceCull = false,
+    RenderDistance     = 1000,
     InstantPrompt      = false,
     EnemyCountHud      = false,
     WoundedEsp         = false,
-    EncryptedEsp       = false,
+    DecryptedEsp       = false,
     UiLocked           = false,
 }
 
@@ -181,8 +183,8 @@ pcall(function()
     end
 end)
 pcall(function()
-    if _G.EncryptedEspConns then
-        for _, conn in ipairs(_G.EncryptedEspConns) do pcall(function() conn:Disconnect() end) end
+    if _G.DecryptedEspConns then
+        for _, conn in ipairs(_G.DecryptedEspConns) do pcall(function() conn:Disconnect() end) end
     end
 end)
 pcall(function()
@@ -204,7 +206,7 @@ end)
 _G.DogtagEspConns = {}
 _G.EnemyHudConns = {}
 _G.WoundedEspConns = {}
-_G.EncryptedEspConns = {}
+_G.DecryptedEspConns = {}
 
 local DraggableRegistry = {}
 
@@ -329,7 +331,7 @@ local function restoreLightingState()
 end
 
 local function updateLightingFeatures()
-    if not WhizConfig.Fullbright and not WhizConfig.NoFog then
+    if not WhizConfig.Fullbright and not WhizConfig.NoFog and not WhizConfig.RenderDistanceCull then
         restoreLightingState()
         return
     end
@@ -365,6 +367,11 @@ local function updateLightingFeatures()
                         obj.Density = 0; obj.Haze = 0; obj.Glare = 0
                     end
                 end
+            end
+
+            if WhizConfig.RenderDistanceCull and not WhizConfig.NoFog then
+                Lighting.FogEnd = WhizConfig.RenderDistance
+                Lighting.FogStart = WhizConfig.RenderDistance * 0.8
             end
         end)
     end)
@@ -884,7 +891,7 @@ local function stopWoundedEsp()
     _G.WoundedEspConns = {}
 end
 
-local encryptedEspData = {}
+local decryptedEspData = {}
 
 local function getCryptographyFolder()
     return workspace:FindFirstChild("Cryptography")
@@ -904,22 +911,22 @@ local function getDecryptedFragment()
     return nil
 end
 
-local function destroyEncryptedEsp(target)
-    local data = encryptedEspData[target]
+local function destroyDecryptedEsp(target)
+    local data = decryptedEspData[target]
     if not data then return end
     pcall(function() if data.highlight then data.highlight:Destroy() end end)
     pcall(function() if data.billboard then data.billboard:Destroy() end end)
-    encryptedEspData[target] = nil
+    decryptedEspData[target] = nil
 end
 
-local function removeAllEncryptedEsp()
-    for t, _ in pairs(encryptedEspData) do destroyEncryptedEsp(t) end
-    encryptedEspData = {}
+local function removeAllDecryptedEsp()
+    for t, _ in pairs(decryptedEspData) do destroyDecryptedEsp(t) end
+    decryptedEspData = {}
 end
 
-local function createEncryptedEsp(target)
+local function createDecryptedEsp(target)
     if not target or not target.Parent then return end
-    if encryptedEspData[target] then return end
+    if decryptedEspData[target] then return end
 
     local adornee = target
     if target:IsA("Model") then
@@ -930,7 +937,7 @@ local function createEncryptedEsp(target)
     if not (adornee and adornee:IsA("BasePart")) then return end
 
     local hl = Instance.new("Highlight")
-    hl.Name                = "EncryptedHighlight"
+    hl.Name                = "DecryptedHighlight"
     hl.Adornee             = target
     hl.FillColor           = Color3.fromRGB(255, 255, 255)
     hl.OutlineColor        = Color3.fromRGB(255, 255, 255)
@@ -940,7 +947,7 @@ local function createEncryptedEsp(target)
     hl.Parent              = target
 
     local billboard = Instance.new("BillboardGui")
-    billboard.Name        = "EncryptedBillboard"
+    billboard.Name        = "DecryptedBillboard"
     billboard.Adornee     = adornee
     billboard.Size        = UDim2.new(0, 170, 0, 22)
     billboard.StudsOffset = Vector3.new(0, 2.5, 0)
@@ -951,7 +958,7 @@ local function createEncryptedEsp(target)
     local label = Instance.new("TextLabel")
     label.Size                   = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text                   = "ENCRYPTED MESSAGE"
+    label.Text                   = "DECRYPTED FRAGMENT"
     label.TextColor3             = Color3.fromRGB(255, 255, 255)
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
@@ -959,7 +966,7 @@ local function createEncryptedEsp(target)
     label.Font                   = Enum.Font.GothamBold
     label.Parent                 = billboard
 
-    encryptedEspData[target] = {
+    decryptedEspData[target] = {
         highlight = hl,
         billboard = billboard,
     }
@@ -968,56 +975,56 @@ local function createEncryptedEsp(target)
     local function onRemoved()
         if removed then return end
         removed = true
-        destroyEncryptedEsp(target)
+        destroyDecryptedEsp(target)
     end
 
-    table.insert(_G.EncryptedEspConns, target.Destroying:Connect(onRemoved))
-    table.insert(_G.EncryptedEspConns, target.AncestryChanged:Connect(function(_, parent)
+    table.insert(_G.DecryptedEspConns, target.Destroying:Connect(onRemoved))
+    table.insert(_G.DecryptedEspConns, target.AncestryChanged:Connect(function(_, parent)
         if parent == nil then onRemoved() end
     end))
 end
 
-local function scanEncrypted()
+local function scanDecrypted()
     pcall(function()
         local target = getDecryptedFragment()
         if target then
-            createEncryptedEsp(target)
+            createDecryptedEsp(target)
         end
     end)
 end
 
-local function startEncryptedEsp()
-    scanEncrypted()
+local function startDecryptedEsp()
+    scanDecrypted()
 
-    table.insert(_G.EncryptedEspConns, workspace.ChildAdded:Connect(function(obj)
-        if not WhizConfig.EncryptedEsp then return end
+    table.insert(_G.DecryptedEspConns, workspace.ChildAdded:Connect(function(obj)
+        if not WhizConfig.DecryptedEsp then return end
         if obj.Name == "Cryptography" then
             task.wait(0.05)
-            scanEncrypted()
+            scanDecrypted()
         end
     end))
 
     pcall(function()
         local folder = getCryptographyFolder()
         if folder then
-            table.insert(_G.EncryptedEspConns, folder.ChildAdded:Connect(function(obj)
-                if not WhizConfig.EncryptedEsp then return end
+            table.insert(_G.DecryptedEspConns, folder.ChildAdded:Connect(function(obj)
+                if not WhizConfig.DecryptedEsp then return end
                 local n = string.lower(string.gsub(tostring(obj.Name or ""), "[%s_%-]", ""))
                 if n == "decryptedfragment" then
                     task.wait(0.05)
-                    createEncryptedEsp(obj)
+                    createDecryptedEsp(obj)
                 end
             end))
         end
     end)
 
     task.spawn(function()
-        while WhizConfig.EncryptedEsp do
-            pcall(scanEncrypted)
+        while WhizConfig.DecryptedEsp do
+            pcall(scanDecrypted)
             pcall(function()
-                for target, _ in pairs(encryptedEspData) do
+                for target, _ in pairs(decryptedEspData) do
                     if not target or not target.Parent then
-                        destroyEncryptedEsp(target)
+                        destroyDecryptedEsp(target)
                     end
                 end
             end)
@@ -1026,14 +1033,14 @@ local function startEncryptedEsp()
     end)
 end
 
-local function stopEncryptedEsp()
-    removeAllEncryptedEsp()
+local function stopDecryptedEsp()
+    removeAllDecryptedEsp()
     pcall(function()
-        for _, conn in ipairs(_G.EncryptedEspConns) do
+        for _, conn in ipairs(_G.DecryptedEspConns) do
             pcall(function() conn:Disconnect() end)
         end
     end)
-    _G.EncryptedEspConns = {}
+    _G.DecryptedEspConns = {}
 end
 
 local TANK_AI    = { ["ai_tank"]      = true }
@@ -1771,12 +1778,12 @@ VisualTab:Toggle({
 })
 
 VisualTab:Toggle({
-    Title = "Encrypted Message ESP (White)",
+    Title = "Decrypted Fragment ESP (White)",
     Desc  = "Marks the 'decrypted fragment' in workspace.Cryptography with a white highlight and label.",
     Default = false,
     Callback = function(v)
-        WhizConfig.EncryptedEsp = v
-        if v then startEncryptedEsp() else stopEncryptedEsp() end
+        WhizConfig.DecryptedEsp = v
+        if v then startDecryptedEsp() else stopDecryptedEsp() end
     end,
 })
 
@@ -1847,6 +1854,40 @@ WorldTab:Toggle({
     Callback = function(v)
         WhizConfig.NoFog = v
         updateLightingFeatures()
+    end,
+})
+
+WorldTab:Toggle({
+    Title = "Enable Render Distance (No Lag)",
+    Desc  = "Culls far parts and adjusts fog dynamically based on your distance slider. Greatly reduces lag.",
+    Default = false,
+    Callback = function(v)
+        WhizConfig.RenderDistanceCull = v
+        updateLightingFeatures()
+        if not v then
+            pcall(function()
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        obj.LocalTransparencyModifier = 0
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+WorldTab:Slider({
+    Title       = "Render Distance (Studs)",
+    Desc        = "Adjust the distance (100 - 5000). Lower = less lag.",
+    Step        = 100,
+    Default     = 1000,
+    Min         = 100,
+    Max         = 5000,
+    Callback    = function(v)
+        WhizConfig.RenderDistance = v
+        if WhizConfig.RenderDistanceCull then
+            updateLightingFeatures()
+        end
     end,
 })
 
@@ -1933,6 +1974,43 @@ task.spawn(function()
             end
         end)
 
+        if WhizConfig.RenderDistanceCull then
+            pcall(function()
+                local camPos = Camera.CFrame.Position
+                local dist = WhizConfig.RenderDistance
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if obj ~= LP.Character then
+                        if obj:IsA("Model") then
+                            local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                            if primary then
+                                local d = (primary.Position - camPos).Magnitude
+                                if d > dist then
+                                    for _, p in ipairs(obj:GetDescendants()) do
+                                        if p:IsA("BasePart") then
+                                            p.LocalTransparencyModifier = 1
+                                        end
+                                    end
+                                else
+                                    for _, p in ipairs(obj:GetDescendants()) do
+                                        if p:IsA("BasePart") then
+                                            p.LocalTransparencyModifier = 0
+                                        end
+                                    end
+                                end
+                            end
+                        elseif obj:IsA("BasePart") then
+                            local d = (obj.Position - camPos).Magnitude
+                            if d > dist then
+                                obj.LocalTransparencyModifier = 1
+                            else
+                                obj.LocalTransparencyModifier = 0
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
         if WhizConfig.EspActive then
             pcall(function()
                 for _, o in pairs(workspace:GetChildren()) do
@@ -1978,12 +2056,12 @@ task.spawn(function()
             end)
         end
 
-        if WhizConfig.EncryptedEsp then
-            scanEncrypted()
+        if WhizConfig.DecryptedEsp then
+            scanDecrypted()
             pcall(function()
-                for target, _ in pairs(encryptedEspData) do
+                for target, _ in pairs(decryptedEspData) do
                     if not target or not target.Parent then
-                        destroyEncryptedEsp(target)
+                        destroyDecryptedEsp(target)
                     end
                 end
             end)
