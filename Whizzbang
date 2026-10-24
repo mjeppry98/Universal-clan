@@ -1859,7 +1859,7 @@ WorldTab:Toggle({
 
 WorldTab:Toggle({
     Title = "Enable Render Distance (No Lag)",
-    Desc  = "Culls far parts and adjusts fog dynamically based on your distance slider. Greatly reduces lag.",
+    Desc  = "Culls far parts and adjusts fog dynamically based on your distance input. Greatly reduces lag.",
     Default = false,
     Callback = function(v)
         WhizConfig.RenderDistanceCull = v
@@ -1876,20 +1876,25 @@ WorldTab:Toggle({
     end,
 })
 
-WorldTab:Slider({
-    Title       = "Render Distance (Studs)",
-    Desc        = "Adjust the distance (100 - 5000). Lower = less lag.",
-    Step        = 100,
-    Default     = 1000,
-    Min         = 100,
-    Max         = 5000,
-    Callback    = function(v)
-        WhizConfig.RenderDistance = v
-        if WhizConfig.RenderDistanceCull then
-            updateLightingFeatures()
-        end
-    end,
-})
+pcall(function()
+    WorldTab:Input({
+        Title       = "Render Distance (Studs)",
+        Desc        = "Type a distance (100 - 5000). Lower = less lag.",
+        Value       = "1000",
+        Placeholder = "e.g. 1000",
+        Type        = "Input",
+        Callback    = function(text)
+            local n = tonumber(text)
+            if n then
+                n = math.clamp(n, 100, 5000)
+                WhizConfig.RenderDistance = n
+                if WhizConfig.RenderDistanceCull then
+                    updateLightingFeatures()
+                end
+            end
+        end,
+    })
+end)
 
 WorldTab:Toggle({
     Title = "No Lag (Low Graphics)",
