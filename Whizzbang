@@ -436,8 +436,15 @@ local function toggleNoLag(state)
     end
 end
 
--- ===== RENDER DISTANCE CULL (real transparency based) =====
-local culledParts = setmetatable({}, {__mode = "k"})
+-- ===== RENDER DISTANCE CULL (smooth + teleport-aware) =====
+local RENDER_TICK           = 0.08
+local HYSTERESIS            = 60
+local TELEPORT_THRESHOLD    = 300
+
+local culledParts    = setmetatable({}, {__mode = "k"})
+local lastCameraPos  = nil
+local renderCullThread = false
+local renderCullConnection = nil
 
 local function cullPart(part)
     if culledParts[part] == nil then
@@ -455,48 +462,108 @@ local function uncullPart(part)
     end
 end
 
-local function updateRenderDistanceCull()
-    if not WhizConfig.RenderDistanceCull then return end
-    local camPos = Camera.CFrame.Position
-    local dist = WhizConfig.RenderDistance
-    local distSq = dist * dist
-    local char = LP.Character
+local function clearRenderDistanceCull()
+    for part, origMod in pairs(culledParts) do
+        pcall(function()
+            if part and part.Parent then
+                part.LocalTransparencyModifier = origMod
+            end
+        end)
+    end
+    culledParts = setmetatable({}, {__mode = "k"})
+    lastCameraPos = nil
+    if renderCullConnection then
+        renderCullConnection:Disconnect()
+        renderCullConnection = nil
+    end
+end
 
+local function doRenderCullPass()
+    if not WhizConfig.RenderDistanceCull then return end
+
+    local camPos    = Camera.CFrame.Position
+    local cullDist  = WhizConfig.RenderDistance
+    local cullSq    = cullDist * cullDist
+    local uncullSq  = math.max(0, cullDist - HYSTERESIS) ^ 2
+    local char      = LP.Character
+
+    -- Teleport detection: if we moved too far between passes, do a full reset
+    local teleported = false
+    if lastCameraPos and (camPos - lastCameraPos).Magnitude > TELEPORT_THRESHOLD then
+        teleported = true
+    end
+    lastCameraPos = camPos
+
+    if teleported then
+        -- Instantly restore everything first (no ghost/transparent parts)
+        for part, origMod in pairs(culledParts) do
+            pcall(function()
+                if part and part.Parent then
+                    part.LocalTransparencyModifier = origMod
+                end
+            end)
+        end
+        culledParts = setmetatable({}, {__mode = "k"})
+    end
+
+    -- One clean pass over every BasePart
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
-            local isChar = char and obj:IsDescendantOf(char)
-            if not isChar then
-                local dSq = (obj.Position - camPos).Magnitude ^ 2
-                if dSq > distSq then
-                    cullPart(obj)
-                else
-                    uncullPart(obj)
-                end
-            else
+            if char and obj:IsDescendantOf(char) then
+                -- Never cull the local player's character
                 uncullPart(obj)
+            else
+                local dSq = (obj.Position - camPos).Magnitude ^ 2
+                if culledParts[obj] then
+                    -- Currently hidden — only show again when well inside range (hysteresis)
+                    if dSq <= uncullSq then
+                        uncullPart(obj)
+                    end
+                else
+                    -- Currently visible — hide once beyond cull distance
+                    if dSq > cullSq then
+                        cullPart(obj)
+                    end
+                end
             end
         end
     end
 end
 
-local function clearRenderDistanceCull()
-    for part, originalMod in pairs(culledParts) do
-        pcall(function()
-            if part and part.Parent then
-                part.LocalTransparencyModifier = originalMod
-            end
-        end)
-    end
-    culledParts = setmetatable({}, {__mode = "k"})
+local function startRenderCullLoop()
+    if renderCullThread then return end
+    renderCullThread = true
+
+    -- Instant teleport handling on render step
+    if renderCullConnection then renderCullConnection:Disconnect() end
+    renderCullConnection = RS.RenderStepped:Connect(function()
+        if not WhizConfig.RenderDistanceCull then return end
+        local camPos = Camera.CFrame.Position
+        if lastCameraPos and (camPos - lastCameraPos).Magnitude > TELEPORT_THRESHOLD then
+            -- Force immediate recalc on teleport so we never see leftover objects
+            doRenderCullPass()
+        end
+    end)
+
+    -- Main periodic pass
+    task.spawn(function()
+        while renderCullThread and WhizConfig.RenderDistanceCull do
+            pcall(doRenderCullPass)
+            task.wait(RENDER_TICK)
+        end
+        renderCullThread = false
+    end)
 end
 
-task.spawn(function()
-    while true do
-        if WhizConfig.RenderDistanceCull then
-            pcall(updateRenderDistanceCull)
-            task.wait(0.15)
-        else
-            task.wait(0.5)
+-- Instantly hide newly-spawned far parts (avoids 1-frame flicker)
+workspace.DescendantAdded:Connect(function(obj)
+    if not WhizConfig.RenderDistanceCull then return end
+    if obj:IsA("BasePart") then
+        local char = LP.Character
+        if char and obj:IsDescendantOf(char) then return end
+        local dSq = (obj.Position - Camera.CFrame.Position).Magnitude ^ 2
+        if dSq > WhizConfig.RenderDistance * WhizConfig.RenderDistance then
+            cullPart(obj)
         end
     end
 end)
@@ -1925,12 +1992,15 @@ WorldTab:Toggle({
 
 WorldTab:Toggle({
     Title = "Enable Render Distance (No Lag)",
-    Desc  = "Hides far objects (LocalTransparency) based on your distance input. Greatly reduces lag.",
+    Desc  = "Smoothly culls far parts with hysteresis. Objects reappear when you approach; teleport instantly re-renders.",
     Default = false,
     Callback = function(v)
         WhizConfig.RenderDistanceCull = v
         updateLightingFeatures()
-        if not v then
+        if v then
+            startRenderCullLoop()
+        else
+            renderCullThread = false
             clearRenderDistanceCull()
         end
     end,
