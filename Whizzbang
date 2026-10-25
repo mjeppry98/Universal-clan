@@ -91,8 +91,8 @@ local WhizConfig = {
     Fullbright         = false,
     NoFog              = false,
     NoLag              = false,
-    RenderDistanceCull = false,
-    RenderDistance     = 1000,
+    RenderDistanceOn   = false,
+    RenderDistanceStuds= 500,
     InstantPrompt      = false,
     EnemyCountHud      = false,
     WoundedEsp         = false,
@@ -331,14 +331,15 @@ local function restoreLightingState()
 end
 
 local function updateLightingFeatures()
-    if not WhizConfig.Fullbright and not WhizConfig.NoFog and not WhizConfig.RenderDistanceCull then
+    if not WhizConfig.Fullbright and not WhizConfig.NoFog then
         restoreLightingState()
         return
     end
 
     takeLightingSnapshot()
 
-    if lightingConnection then lightingConnection:Disconnect() end
+    if lightingConnection then return end
+
     lightingConnection = RS.Heartbeat:Connect(function()
         pcall(function()
             if WhizConfig.Fullbright then
@@ -367,11 +368,6 @@ local function updateLightingFeatures()
                         obj.Density = 0; obj.Haze = 0; obj.Glare = 0
                     end
                 end
-            end
-
-            if WhizConfig.RenderDistanceCull and not WhizConfig.NoFog then
-                Lighting.FogEnd = WhizConfig.RenderDistance
-                Lighting.FogStart = WhizConfig.RenderDistance * 0.8
             end
         end)
     end)
@@ -436,139 +432,50 @@ local function toggleNoLag(state)
     end
 end
 
--- ===== RENDER DISTANCE CULL (smooth + teleport-aware) =====
-local RENDER_TICK           = 0.08
-local HYSTERESIS            = 60
-local TELEPORT_THRESHOLD    = 300
+local renderDistanceThread = false
 
-local culledParts    = setmetatable({}, {__mode = "k"})
-local lastCameraPos  = nil
-local renderCullThread = false
-local renderCullConnection = nil
+local function startRenderDistance()
+    if renderDistanceThread then return end
+    renderDistanceThread = true
 
-local function cullPart(part)
-    if culledParts[part] == nil then
-        culledParts[part] = part.LocalTransparencyModifier
-    end
-    part.LocalTransparencyModifier = 1
-end
-
-local function uncullPart(part)
-    if culledParts[part] ~= nil then
-        pcall(function()
-            part.LocalTransparencyModifier = culledParts[part]
-        end)
-        culledParts[part] = nil
-    end
-end
-
-local function clearRenderDistanceCull()
-    for part, origMod in pairs(culledParts) do
-        pcall(function()
-            if part and part.Parent then
-                part.LocalTransparencyModifier = origMod
-            end
-        end)
-    end
-    culledParts = setmetatable({}, {__mode = "k"})
-    lastCameraPos = nil
-    if renderCullConnection then
-        renderCullConnection:Disconnect()
-        renderCullConnection = nil
-    end
-end
-
-local function doRenderCullPass()
-    if not WhizConfig.RenderDistanceCull then return end
-
-    local camPos    = Camera.CFrame.Position
-    local cullDist  = WhizConfig.RenderDistance
-    local cullSq    = cullDist * cullDist
-    local uncullSq  = math.max(0, cullDist - HYSTERESIS) ^ 2
-    local char      = LP.Character
-
-    -- Teleport detection: if we moved too far between passes, do a full reset
-    local teleported = false
-    if lastCameraPos and (camPos - lastCameraPos).Magnitude > TELEPORT_THRESHOLD then
-        teleported = true
-    end
-    lastCameraPos = camPos
-
-    if teleported then
-        -- Instantly restore everything first (no ghost/transparent parts)
-        for part, origMod in pairs(culledParts) do
+    task.spawn(function()
+        while WhizConfig.RenderDistanceOn do
             pcall(function()
-                if part and part.Parent then
-                    part.LocalTransparencyModifier = origMod
+                if not LP.Character then return end
+                local root = LP.Character:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                local myPos = root.Position
+
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        if not obj:IsDescendantOf(LP.Character) and not obj:FindFirstAncestorOfClass("Tool") then
+                            local dist = (obj.Position - myPos).Magnitude
+                            if dist > WhizConfig.RenderDistanceStuds then
+                                obj.LocalTransparencyModifier = 1
+                            else
+                                obj.LocalTransparencyModifier = 0
+                            end
+                        end
+                    end
                 end
             end)
+            task.wait(1.5)
         end
-        culledParts = setmetatable({}, {__mode = "k"})
-    end
+        renderDistanceThread = false
+    end)
+end
 
-    -- One clean pass over every BasePart
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            if char and obj:IsDescendantOf(char) then
-                -- Never cull the local player's character
-                uncullPart(obj)
-            else
-                local dSq = (obj.Position - camPos).Magnitude ^ 2
-                if culledParts[obj] then
-                    -- Currently hidden — only show again when well inside range (hysteresis)
-                    if dSq <= uncullSq then
-                        uncullPart(obj)
-                    end
-                else
-                    -- Currently visible — hide once beyond cull distance
-                    if dSq > cullSq then
-                        cullPart(obj)
-                    end
-                end
+local function stopRenderDistance()
+    renderDistanceThread = false
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.LocalTransparencyModifier = 0
             end
         end
-    end
-end
-
-local function startRenderCullLoop()
-    if renderCullThread then return end
-    renderCullThread = true
-
-    -- Instant teleport handling on render step
-    if renderCullConnection then renderCullConnection:Disconnect() end
-    renderCullConnection = RS.RenderStepped:Connect(function()
-        if not WhizConfig.RenderDistanceCull then return end
-        local camPos = Camera.CFrame.Position
-        if lastCameraPos and (camPos - lastCameraPos).Magnitude > TELEPORT_THRESHOLD then
-            -- Force immediate recalc on teleport so we never see leftover objects
-            doRenderCullPass()
-        end
-    end)
-
-    -- Main periodic pass
-    task.spawn(function()
-        while renderCullThread and WhizConfig.RenderDistanceCull do
-            pcall(doRenderCullPass)
-            task.wait(RENDER_TICK)
-        end
-        renderCullThread = false
     end)
 end
 
--- Instantly hide newly-spawned far parts (avoids 1-frame flicker)
-workspace.DescendantAdded:Connect(function(obj)
-    if not WhizConfig.RenderDistanceCull then return end
-    if obj:IsA("BasePart") then
-        local char = LP.Character
-        if char and obj:IsDescendantOf(char) then return end
-        local dSq = (obj.Position - Camera.CFrame.Position).Magnitude ^ 2
-        if dSq > WhizConfig.RenderDistance * WhizConfig.RenderDistance then
-            cullPart(obj)
-        end
-    end
-end)
-
--- ===== CROSSHAIR =====
 local CrossGui = Instance.new("ScreenGui")
 CrossGui.Name = "WhizCrosshair"
 CrossGui.ResetOnSpawn = false
@@ -1991,48 +1898,36 @@ WorldTab:Toggle({
 })
 
 WorldTab:Toggle({
-    Title = "Enable Render Distance (No Lag)",
-    Desc  = "Smoothly culls far parts with hysteresis. Objects reappear when you approach; teleport instantly re-renders.",
-    Default = false,
-    Callback = function(v)
-        WhizConfig.RenderDistanceCull = v
-        updateLightingFeatures()
-        if v then
-            startRenderCullLoop()
-        else
-            renderCullThread = false
-            clearRenderDistanceCull()
-        end
-    end,
-})
-
-pcall(function()
-    WorldTab:Input({
-        Title       = "Render Distance (Studs)",
-        Desc        = "Type a distance (100 - 5000). Lower = less lag.",
-        Value       = "1000",
-        Placeholder = "e.g. 1000",
-        Type        = "Input",
-        Callback    = function(text)
-            local n = tonumber(text)
-            if n then
-                n = math.clamp(n, 100, 5000)
-                WhizConfig.RenderDistance = n
-                if WhizConfig.RenderDistanceCull then
-                    updateLightingFeatures()
-                end
-            end
-        end,
-    })
-end)
-
-WorldTab:Toggle({
     Title = "No Lag (Low Graphics)",
     Desc  = "Disables particles, shadows, and sets graphics to lowest to reduce lag.",
     Default = false,
     Callback = function(v)
         WhizConfig.NoLag = v
         toggleNoLag(v)
+    end,
+})
+
+pcall(function()
+    WorldTab:Input({
+        Title       = "Render Distance (Studs)",
+        Desc        = "Type a number to set render distance (100 - 5000).",
+        Value       = "500",
+        Placeholder = "e.g. 500",
+        Type        = "Input",
+        Callback    = function(text)
+            local n = tonumber(text)
+            if n then WhizConfig.RenderDistanceStuds = math.clamp(n, 100, 5000) end
+        end,
+    })
+end)
+
+WorldTab:Toggle({
+    Title = "Enable Render Distance",
+    Desc  = "Culls objects further than the set distance. Objects will appear as you get closer.",
+    Default = false,
+    Callback = function(v)
+        WhizConfig.RenderDistanceOn = v
+        if v then startRenderDistance() else stopRenderDistance() end
     end,
 })
 
