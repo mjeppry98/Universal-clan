@@ -1,0 +1,2793 @@
+--// Nocturne Executor (v3 + ScriptBlox)
+--// Jalankan script ini -> UI muncul -> tulis script di Editor -> tekan Execute
+--// Tab: Editor, Scripts (library + folder), ScriptBlox (browser script), Console
+--// RightShift = tampil/sembunyi
+--// Data disimpan di folder executor: Nocturne/library.json (butuh writefile/readfile)
+--// Gambar (icon + thumbnail ScriptBlox) disimpan via writefile lalu dipakai lewat getcustomasset
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local LogService = game:GetService("LogService")
+local TextService = game:GetService("TextService")
+local HttpService = game:GetService("HttpService")
+
+local lp = Players.LocalPlayer
+
+local function getHost()
+	local ok, h = pcall(function()
+		return gethui and gethui()
+	end)
+	if ok and h then
+		return h
+	end
+	return lp:WaitForChild("PlayerGui")
+end
+
+local host = getHost()
+local prev = host:FindFirstChild("NocturneExecutor")
+if prev then
+	prev:Destroy()
+end
+
+--// ========== Warna ==========
+local C = {
+	bg = Color3.fromRGB(13, 13, 16),
+	bar = Color3.fromRGB(18, 18, 22),
+	side = Color3.fromRGB(16, 16, 20),
+	surface = Color3.fromRGB(26, 26, 32),
+	line = Color3.fromRGB(36, 36, 44),
+	text = Color3.fromRGB(218, 218, 226),
+	sub = Color3.fromRGB(112, 112, 128),
+	dim = Color3.fromRGB(74, 74, 88),
+	accent = Color3.fromRGB(132, 86, 232),
+	accentLight = Color3.fromRGB(184, 152, 255),
+	ok = Color3.fromRGB(116, 200, 144),
+	err = Color3.fromRGB(235, 104, 104),
+	warn = Color3.fromRGB(226, 188, 84),
+}
+
+--// ========== Helper ==========
+local conns = {} -- hanya untuk event service (global)
+local function connect(sig, fn)
+	local c = sig:Connect(fn)
+	table.insert(conns, c)
+	return c
+end
+
+local function create(class, props, kids)
+	local o = Instance.new(class)
+	for k, v in pairs(props or {}) do
+		if k ~= "Parent" then
+			o[k] = v
+		end
+	end
+	for _, k in ipairs(kids or {}) do
+		k.Parent = o
+	end
+	if props and props.Parent then
+		o.Parent = props.Parent
+	end
+	return o
+end
+
+local function corner(o, r)
+	return create("UICorner", { CornerRadius = UDim.new(0, r), Parent = o })
+end
+
+local function tw(o, t, p, style, dir)
+	local tween = TweenService:Create(
+		o,
+		TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+		p
+	)
+	tween:Play()
+	return tween
+end
+
+local function line(parent, props)
+	props.BackgroundColor3 = C.line
+	props.BorderSizePixel = 0
+	props.Parent = parent
+	return create("Frame", props)
+end
+
+local function hoverBg(b, base, over, press)
+	b.MouseEnter:Connect(function()
+		tw(b, 0.08, { BackgroundColor3 = over })
+	end)
+	b.MouseLeave:Connect(function()
+		tw(b, 0.08, { BackgroundColor3 = base })
+	end)
+	b.MouseButton1Down:Connect(function()
+		tw(b, 0.05, { BackgroundColor3 = press })
+	end)
+	b.MouseButton1Up:Connect(function()
+		tw(b, 0.1, { BackgroundColor3 = over })
+	end)
+end
+
+local function textButton(parent, text, bg, fg, w, h)
+	local b = create("TextButton", {
+		Text = text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextColor3 = fg,
+		AutoButtonColor = false,
+		BackgroundColor3 = bg,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(w, h),
+		Parent = parent,
+	})
+	corner(b, 5)
+	hoverBg(b, bg, bg:Lerp(Color3.new(1, 1, 1), 0.09), bg:Lerp(Color3.new(0, 0, 0), 0.2))
+	return b
+end
+
+--// ========== Icon (download -> writefile -> getcustomasset) ==========
+local CDN = "https://cdnjs.cloudflare.com/ajax/libs/material-design-icons/2.1.1/"
+local FOLDER = "Nocturne"
+local DATA = FOLDER .. "/library.json"
+local ICONS = {
+	play = { "av", "play_arrow" },
+	trash = { "action", "delete" },
+	copy = { "content", "content_copy" },
+	close = { "navigation", "close" },
+	minus = { "content", "remove" },
+	edit = { "editor", "mode_edit" },
+	list = { "action", "list" },
+	code = { "action", "code" },
+	save = { "content", "save" },
+	folder = { "file", "folder" },
+	newfolder = { "file", "create_new_folder" },
+	add = { "content", "add" },
+	file = { "editor", "insert_drive_file" },
+	search = { "action", "search" },
+	download = { "file", "file_download" },
+	cloud = { "file", "cloud_download" },
+}
+
+local function httpGet(url)
+	local ok, res = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if ok and type(res) == "string" and #res > 0 then
+		return res
+	end
+	local req = (syn and syn.request) or http_request or request
+	if req then
+		local ok2, r = pcall(req, { Url = url, Method = "GET" })
+		if ok2 and r and r.StatusCode == 200 and type(r.Body) == "string" then
+			return r.Body
+		end
+	end
+	return nil
+end
+
+local function ensureFolder(path)
+	path = path or FOLDER
+	if makefolder and isfolder and not isfolder(path) then
+		pcall(makefolder, path)
+	end
+end
+
+local function loadIcon(key)
+	local getAsset = getcustomasset or getsynasset
+	if not (writefile and isfile and getAsset) then
+		return nil
+	end
+	local cat, name = ICONS[key][1], ICONS[key][2]
+	local path = FOLDER .. "/" .. key .. ".png"
+	if not isfile(path) then
+		ensureFolder()
+		local data
+		for _, sz in ipairs({ "2x_web", "1x_web" }) do
+			local d = httpGet(("%s%s/%s/ic_%s_white_24dp.png"):format(CDN, cat, sz, name))
+			if d and d:sub(2, 4) == "PNG" then
+				data = d
+				break
+			end
+		end
+		if not data then
+			return nil
+		end
+		pcall(writefile, path, data)
+	end
+	local ok, id = pcall(getAsset, path)
+	if ok and id then
+		return id
+	end
+	return nil
+end
+
+local ids, waiting = {}, {}
+
+local function applyIcon(h, id)
+	if not h.img.Parent then
+		return
+	end
+	if id then
+		h.img.Image = id
+		tw(h.img, 0.2, { ImageTransparency = 0 })
+	else
+		h.fb.Visible = true
+	end
+end
+
+local function icon(parent, key, px, pos, color, fbText)
+	local h = {}
+	h.img = create("ImageLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = pos,
+		Size = UDim2.fromOffset(px, px),
+		ImageColor3 = color,
+		ImageTransparency = 1,
+		ScaleType = Enum.ScaleType.Fit,
+		Parent = parent,
+	})
+	h.fb = create("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = pos,
+		Size = UDim2.fromOffset(px, px),
+		Text = fbText or "",
+		Font = Enum.Font.GothamBold,
+		TextSize = px - 3,
+		TextColor3 = color,
+		Visible = false,
+		Parent = parent,
+	})
+	if ids[key] ~= nil then
+		applyIcon(h, ids[key] or nil)
+	else
+		waiting[key] = waiting[key] or {}
+		table.insert(waiting[key], h)
+	end
+	return h
+end
+
+local function tint(h, color, t)
+	tw(h.img, t or 0.1, { ImageColor3 = color })
+	tw(h.fb, t or 0.1, { TextColor3 = color })
+end
+
+--// ========== Skala responsif ==========
+local cam = workspace.CurrentCamera
+local function baseScale()
+	local v = cam and cam.ViewportSize or Vector2.new(1280, 720)
+	return math.clamp(math.min(v.X / 600, v.Y / 360), 0.5, 1.15)
+end
+
+--// ========== Window ==========
+local gui = create("ScreenGui", {
+	Name = "NocturneExecutor",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 999,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	Parent = host,
+})
+
+local main = create("CanvasGroup", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(560, 320),
+	BackgroundColor3 = C.bg,
+	BorderSizePixel = 0,
+	GroupTransparency = 1,
+	Parent = gui,
+})
+corner(main, 8)
+create("UIStroke", {
+	Color = C.line,
+	Thickness = 1,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	Parent = main,
+})
+local scale = create("UIScale", { Scale = baseScale() * 0.94, Parent = main })
+
+--// Title bar
+local top = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 32),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	Parent = main,
+})
+line(top, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1) })
+icon(top, "code", 14, UDim2.fromOffset(18, 16), C.accent, "<>")
+create("TextLabel", {
+	Text = "Nocturne",
+	Font = Enum.Font.GothamMedium,
+	TextSize = 12,
+	TextColor3 = C.text,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(34, 0),
+	Size = UDim2.new(0, 80, 1, 0),
+	Parent = top,
+})
+
+local function winBtn(key, fb, fromRight, hoverColor)
+	local b = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = hoverColor,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -fromRight, 0, 0),
+		Size = UDim2.fromOffset(36, 32),
+		Parent = top,
+	})
+	local ic = icon(b, key, 14, UDim2.fromScale(0.5, 0.5), C.sub, fb)
+	b.MouseEnter:Connect(function()
+		tw(b, 0.08, { BackgroundTransparency = 0.82 })
+		tint(ic, C.text, 0.08)
+	end)
+	b.MouseLeave:Connect(function()
+		tw(b, 0.08, { BackgroundTransparency = 1 })
+		tint(ic, C.sub, 0.08)
+	end)
+	return b
+end
+local closeBtn = winBtn("close", "x", 0, C.err)
+local minBtn = winBtn("minus", "-", 36, C.text)
+
+--// Sidebar
+local side = create("Frame", {
+	Position = UDim2.fromOffset(0, 32),
+	Size = UDim2.new(0, 44, 1, -54),
+	BackgroundColor3 = C.side,
+	BorderSizePixel = 0,
+	Parent = main,
+})
+line(side, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 1, 1, 0) })
+
+local tabs = {
+	{ "Editor", "edit", "E" },
+	{ "Scripts", "folder", "S" },
+	{ "ScriptBlox", "cloud", "B" },
+	{ "Console", "list", "C" },
+}
+local order = { Editor = 1, Scripts = 2, ScriptBlox = 3, Console = 4 }
+local tabBtns, tabIcons = {}, {}
+local indicator = create("Frame", {
+	Position = UDim2.fromOffset(0, 12),
+	Size = UDim2.fromOffset(2, 20),
+	BackgroundColor3 = C.accent,
+	BorderSizePixel = 0,
+	Parent = side,
+})
+for i, t in ipairs(tabs) do
+	local b = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = C.surface,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(5, 8 + (i - 1) * 40),
+		Size = UDim2.fromOffset(34, 36),
+		Parent = side,
+	})
+	corner(b, 5)
+	tabIcons[t[1]] = icon(b, t[2], 18, UDim2.fromScale(0.5, 0.5), i == 1 and C.text or C.sub, t[3])
+	tabBtns[t[1]] = b
+	b.MouseEnter:Connect(function()
+		tw(b, 0.08, { BackgroundTransparency = 0.4 })
+	end)
+	b.MouseLeave:Connect(function()
+		tw(b, 0.08, { BackgroundTransparency = 1 })
+	end)
+end
+
+--// Area konten + pages
+local area = create("Frame", {
+	Position = UDim2.fromOffset(45, 32),
+	Size = UDim2.new(1, -45, 1, -98),
+	BackgroundTransparency = 1,
+	ClipsDescendants = true,
+	Parent = main,
+})
+local function makePage()
+	return create("CanvasGroup", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = C.bg,
+		BorderSizePixel = 0,
+		Parent = area,
+	})
+end
+local editorPage = makePage()
+local libraryPage = makePage()
+local sbPage = makePage()
+local consolePage = makePage()
+libraryPage.Visible = false
+sbPage.Visible = false
+consolePage.Visible = false
+
+--// ----- Editor page -----
+local STRIP = 26
+local strip = create("ScrollingFrame", {
+	Size = UDim2.new(1, 0, 0, STRIP),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 0,
+	ScrollingDirection = Enum.ScrollingDirection.X,
+	AutomaticCanvasSize = Enum.AutomaticSize.X,
+	CanvasSize = UDim2.new(),
+	Parent = editorPage,
+})
+create("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Parent = strip,
+})
+line(editorPage, { Position = UDim2.fromOffset(0, STRIP - 1), Size = UDim2.new(1, 0, 0, 1) })
+
+local plusBtn = create("TextButton", {
+	Text = "",
+	AutoButtonColor = false,
+	BackgroundColor3 = C.surface,
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	LayoutOrder = 1000,
+	Size = UDim2.fromOffset(30, STRIP - 1),
+	Parent = strip,
+})
+local plusIcon = icon(plusBtn, "add", 13, UDim2.fromScale(0.5, 0.5), C.sub, "+")
+plusBtn.MouseEnter:Connect(function()
+	tw(plusBtn, 0.08, { BackgroundTransparency = 0.4 })
+	tint(plusIcon, C.text, 0.08)
+end)
+plusBtn.MouseLeave:Connect(function()
+	tw(plusBtn, 0.08, { BackgroundTransparency = 1 })
+	tint(plusIcon, C.sub, 0.08)
+end)
+
+local gutter = create("Frame", {
+	Position = UDim2.fromOffset(0, STRIP),
+	Size = UDim2.new(0, 36, 1, -STRIP),
+	BackgroundColor3 = C.side,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	Parent = editorPage,
+})
+line(gutter, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 1, 1, 0) })
+local gutterLabel = create("TextLabel", {
+	Position = UDim2.fromOffset(0, 8),
+	Size = UDim2.new(1, -8, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	Text = "1",
+	Font = Enum.Font.Code,
+	TextSize = 13,
+	TextColor3 = C.dim,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	Parent = gutter,
+})
+
+local editorScroll = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(37, STRIP),
+	Size = UDim2.new(1, -37, 1, -STRIP),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = C.dim,
+	ScrollingDirection = Enum.ScrollingDirection.XY,
+	AutomaticCanvasSize = Enum.AutomaticSize.XY,
+	CanvasSize = UDim2.new(),
+	Parent = editorPage,
+})
+
+-- label berwarna (di belakang), TextBox transparan (di depan) -> syntax highlight
+local hlLabel = create("TextLabel", {
+	Position = UDim2.fromOffset(8, 8),
+	Size = UDim2.fromOffset(0, 0),
+	AutomaticSize = Enum.AutomaticSize.XY,
+	BackgroundTransparency = 1,
+	RichText = true,
+	Text = "",
+	Font = Enum.Font.Code,
+	TextSize = 13,
+	TextColor3 = C.text,
+	TextWrapped = false,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	ZIndex = 1,
+	Parent = editorScroll,
+})
+local editor = create("TextBox", {
+	Size = UDim2.fromOffset(470, 196),
+	AutomaticSize = Enum.AutomaticSize.XY,
+	BackgroundTransparency = 1,
+	ClearTextOnFocus = false,
+	MultiLine = true,
+	TextWrapped = false,
+	Text = "",
+	PlaceholderText = "-- script",
+	PlaceholderColor3 = C.dim,
+	TextColor3 = C.text,
+	TextTransparency = 1,
+	Font = Enum.Font.Code,
+	TextSize = 13,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	ZIndex = 2,
+	Parent = editorScroll,
+})
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 8),
+	PaddingLeft = UDim.new(0, 8),
+	PaddingRight = UDim.new(0, 12),
+	PaddingBottom = UDim.new(0, 8),
+	Parent = editor,
+})
+
+--// ----- Library page -----
+local libHeader = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 34),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	Parent = libraryPage,
+})
+line(libHeader, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1) })
+create("TextLabel", {
+	Text = "Library",
+	Font = Enum.Font.GothamMedium,
+	TextSize = 12,
+	TextColor3 = C.text,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(12, 0),
+	Size = UDim2.new(0, 80, 1, 0),
+	Parent = libHeader,
+})
+
+local function headerButton(text, key, fb, rightOffset, w)
+	local b = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = C.surface,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -rightOffset, 0.5, 0),
+		Size = UDim2.fromOffset(w, 24),
+		Parent = libHeader,
+	})
+	corner(b, 5)
+	hoverBg(b, C.surface, C.surface:Lerp(Color3.new(1, 1, 1), 0.09), C.surface:Lerp(Color3.new(0, 0, 0), 0.2))
+	icon(b, key, 12, UDim2.new(0, 14, 0.5, 0), C.text, fb)
+	create("TextLabel", {
+		Text = text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = C.text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(27, 0),
+		Size = UDim2.new(1, -27, 1, 0),
+		Parent = b,
+	})
+	return b
+end
+local newFolderBtn = headerButton("Folder", "newfolder", "F", 10, 78)
+local newScriptBtn = headerButton("Script", "add", "+", 96, 74)
+
+local libList = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(0, 35),
+	Size = UDim2.new(1, 0, 1, -35),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = C.dim,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+	Parent = libraryPage,
+})
+create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = libList })
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 6),
+	PaddingLeft = UDim.new(0, 6),
+	PaddingRight = UDim.new(0, 6),
+	PaddingBottom = UDim.new(0, 6),
+	Parent = libList,
+})
+
+--// ----- ScriptBlox page (kerangka) -----
+local sbHeader = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 38),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	Parent = sbPage,
+})
+line(sbHeader, { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1) })
+
+local sbSearchWrap = create("Frame", {
+	Position = UDim2.fromOffset(8, 6),
+	Size = UDim2.new(1, -168, 0, 26),
+	BackgroundColor3 = C.bg,
+	BorderSizePixel = 0,
+	Parent = sbHeader,
+})
+corner(sbSearchWrap, 5)
+local sbStroke = create("UIStroke", {
+	Color = C.line,
+	Thickness = 1,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	Parent = sbSearchWrap,
+})
+icon(sbSearchWrap, "search", 13, UDim2.fromOffset(14, 13), C.sub, "?")
+local sbInput = create("TextBox", {
+	Position = UDim2.fromOffset(28, 0),
+	Size = UDim2.new(1, -34, 1, 0),
+	BackgroundTransparency = 1,
+	ClearTextOnFocus = false,
+	Text = "",
+	PlaceholderText = "Cari script, tekan Enter",
+	PlaceholderColor3 = C.dim,
+	TextColor3 = C.text,
+	Font = Enum.Font.Gotham,
+	TextSize = 12,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Parent = sbSearchWrap,
+})
+sbInput.Focused:Connect(function()
+	tw(sbStroke, 0.12, { Color = C.accent })
+end)
+sbInput.FocusLost:Connect(function()
+	tw(sbStroke, 0.12, { Color = C.line })
+end)
+
+local function makeChip(text, w, fromRight)
+	local b = create("TextButton", {
+		Text = text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = C.sub,
+		AutoButtonColor = false,
+		BackgroundColor3 = C.surface,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -fromRight, 0.5, -1),
+		Size = UDim2.fromOffset(w, 24),
+		Parent = sbHeader,
+	})
+	corner(b, 5)
+	b:SetAttribute("on", false)
+	b.MouseEnter:Connect(function()
+		if not b:GetAttribute("on") then
+			tw(b, 0.08, { BackgroundColor3 = C.surface:Lerp(Color3.new(1, 1, 1), 0.09) })
+		end
+	end)
+	b.MouseLeave:Connect(function()
+		if not b:GetAttribute("on") then
+			tw(b, 0.08, { BackgroundColor3 = C.surface })
+		end
+	end)
+	return b
+end
+local function setChip(b, on)
+	b:SetAttribute("on", on)
+	tw(b, 0.12, {
+		BackgroundColor3 = on and C.accent or C.surface,
+		TextColor3 = on and Color3.new(1, 1, 1) or C.sub,
+	})
+end
+local chipTrending = makeChip("Trending", 66, 8)
+local chipLatest = makeChip("Latest", 56, 80)
+
+local sbBarHolder = create("Frame", {
+	Position = UDim2.fromOffset(0, 36),
+	Size = UDim2.new(1, 0, 0, 2),
+	BackgroundTransparency = 1,
+	ClipsDescendants = true,
+	ZIndex = 3,
+	Parent = sbPage,
+})
+local sbBar = create("Frame", {
+	Size = UDim2.fromScale(0.35, 1),
+	Position = UDim2.fromScale(-0.35, 0),
+	BackgroundColor3 = C.accent,
+	BorderSizePixel = 0,
+	Visible = false,
+	Parent = sbBarHolder,
+})
+
+local sbList = create("ScrollingFrame", {
+	Position = UDim2.fromOffset(0, 39),
+	Size = UDim2.new(1, 0, 1, -39),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = C.dim,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+	Parent = sbPage,
+})
+create("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sbList })
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 6),
+	PaddingLeft = UDim.new(0, 6),
+	PaddingRight = UDim.new(0, 6),
+	PaddingBottom = UDim.new(0, 6),
+	Parent = sbList,
+})
+
+--// ----- Console page -----
+local consoleScroll = create("ScrollingFrame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = C.dim,
+	ScrollingDirection = Enum.ScrollingDirection.Y,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+	Parent = consolePage,
+})
+create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = consoleScroll })
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 8),
+	PaddingLeft = UDim.new(0, 10),
+	PaddingRight = UDim.new(0, 10),
+	PaddingBottom = UDim.new(0, 8),
+	Parent = consoleScroll,
+})
+
+local entries, logCount = {}, 0
+local function log(msg, kind)
+	local col, tag = C.text, "info"
+	if kind == "err" then
+		col, tag = C.err, "error"
+	elseif kind == "ok" then
+		col, tag = C.ok, "ok"
+	elseif kind == "warn" then
+		col, tag = C.warn, "warn"
+	end
+	logCount += 1
+	local l = create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Font = Enum.Font.Code,
+		TextSize = 12,
+		TextColor3 = col,
+		TextTransparency = 1,
+		Text = ("%s  %-5s %s"):format(os.date("%H:%M:%S"), tag, tostring(msg)),
+		LayoutOrder = logCount,
+		Parent = consoleScroll,
+	})
+	tw(l, 0.15, { TextTransparency = 0 })
+	table.insert(entries, l)
+	if #entries > 150 then
+		table.remove(entries, 1):Destroy()
+	end
+	task.defer(function()
+		if consoleScroll.Parent then
+			consoleScroll.CanvasPosition = Vector2.new(0, 1e6)
+		end
+	end)
+end
+
+connect(LogService.MessageOut, function(message, mtype)
+	local kind = "info"
+	if mtype == Enum.MessageType.MessageError then
+		kind = "err"
+	elseif mtype == Enum.MessageType.MessageWarning then
+		kind = "warn"
+	end
+	log(message, kind)
+end)
+
+--// ========== Toolbar ==========
+local toolbar = create("Frame", {
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 45, 1, -22),
+	Size = UDim2.new(1, -45, 0, 44),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	Parent = main,
+})
+line(toolbar, { Size = UDim2.new(1, 0, 0, 1) })
+
+local function toolButton(text, key, fb, bg, fg, x, w)
+	local b = create("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = bg,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(x, 9),
+		Size = UDim2.fromOffset(w, 28),
+		Parent = toolbar,
+	})
+	corner(b, 5)
+	local sc = create("UIScale", { Parent = b })
+	local hov = bg:Lerp(Color3.new(1, 1, 1), 0.09)
+	local prs = bg:Lerp(Color3.new(0, 0, 0), 0.2)
+	icon(b, key, 14, UDim2.new(0, 16, 0.5, 0), fg, fb)
+	create("TextLabel", {
+		Text = text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextColor3 = fg,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(31, 0),
+		Size = UDim2.new(1, -31, 1, 0),
+		Parent = b,
+	})
+	b.MouseEnter:Connect(function()
+		tw(b, 0.08, { BackgroundColor3 = hov })
+	end)
+	b.MouseLeave:Connect(function()
+		tw(b, 0.08, { BackgroundColor3 = bg })
+		tw(sc, 0.08, { Scale = 1 })
+	end)
+	b.MouseButton1Down:Connect(function()
+		tw(b, 0.05, { BackgroundColor3 = prs })
+		tw(sc, 0.05, { Scale = 0.96 })
+	end)
+	b.MouseButton1Up:Connect(function()
+		tw(b, 0.1, { BackgroundColor3 = hov })
+		tw(sc, 0.12, { Scale = 1 }, Enum.EasingStyle.Back)
+	end)
+	return b
+end
+
+local execBtn = toolButton("Execute", "play", ">", C.accent, Color3.new(1, 1, 1), 10, 94)
+local saveBtn = toolButton("Save", "save", "S", C.surface, C.text, 112, 72)
+local renameBtn = toolButton("Rename", "edit", "R", C.surface, C.text, 192, 84)
+local clearBtn = toolButton("Clear", "trash", "x", C.surface, C.text, 284, 72)
+local copyBtn = toolButton("Copy", "copy", "c", C.surface, C.text, 364, 72)
+
+--// Status bar
+local statusBar = create("Frame", {
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 0, 22),
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	Parent = main,
+})
+line(statusBar, { Size = UDim2.new(1, 0, 0, 1) })
+local status = create("TextLabel", {
+	Text = "Ready",
+	Font = Enum.Font.Gotham,
+	TextSize = 11,
+	TextColor3 = C.sub,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextTruncate = Enum.TextTruncate.AtEnd,
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(12, 0),
+	Size = UDim2.new(0.65, 0, 1, 0),
+	Parent = statusBar,
+})
+create("TextLabel", {
+	Text = "RightShift  toggle",
+	Font = Enum.Font.Gotham,
+	TextSize = 11,
+	TextColor3 = C.dim,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -12, 0, 0),
+	Size = UDim2.new(0.3, 0, 1, 0),
+	Parent = statusBar,
+})
+local function setStatus(text, col)
+	status.Text = text
+	status.TextColor3 = col or C.sub
+	status.Position = UDim2.fromOffset(20, 0)
+	status.TextTransparency = 1
+	tw(status, 0.15, { TextTransparency = 0, Position = UDim2.fromOffset(12, 0) })
+end
+
+--// ========== Ganti tab sidebar ==========
+local current = "Editor"
+local pages = { Editor = editorPage, Scripts = libraryPage, ScriptBlox = sbPage, Console = consolePage }
+local sbOnOpen = nil -- diisi di bagian ScriptBlox
+local function switchTab(name)
+	if name == current then
+		return
+	end
+	local oldName = current
+	current = name
+	local oldP, newP = pages[oldName], pages[name]
+	local dir = order[name] > order[oldName] and 1 or -1
+
+	for n, ic in pairs(tabIcons) do
+		tint(ic, n == name and C.text or C.sub, 0.12)
+	end
+	tw(indicator, 0.16, { Position = UDim2.fromOffset(0, 12 + (order[name] - 1) * 40) })
+
+	tw(oldP, 0.08, { GroupTransparency = 1 })
+	task.delay(0.08, function()
+		if current ~= oldName then
+			oldP.Visible = false
+		end
+	end)
+	newP.Visible = true
+	newP.GroupTransparency = 1
+	newP.Position = UDim2.fromOffset(0, 10 * dir)
+	tw(newP, 0.16, { GroupTransparency = 0, Position = UDim2.fromOffset(0, 0) })
+
+	if name == "ScriptBlox" and sbOnOpen then
+		sbOnOpen()
+	end
+end
+for name, b in pairs(tabBtns) do
+	b.MouseButton1Click:Connect(function()
+		switchTab(name)
+	end)
+end
+
+--// ========== Syntax highlighter Luau ==========
+local function hex(c)
+	return string.format(
+		"#%02x%02x%02x",
+		math.floor(c.R * 255 + 0.5),
+		math.floor(c.G * 255 + 0.5),
+		math.floor(c.B * 255 + 0.5)
+	)
+end
+local SYN = {
+	kw = hex(Color3.fromRGB(178, 140, 255)),
+	bi = hex(Color3.fromRGB(126, 184, 236)),
+	str = hex(Color3.fromRGB(152, 208, 142)),
+	num = hex(Color3.fromRGB(236, 168, 108)),
+	cm = hex(Color3.fromRGB(98, 98, 116)),
+	fn = hex(Color3.fromRGB(226, 206, 142)),
+}
+
+local function set(list)
+	local t = {}
+	for _, v in ipairs(list) do
+		t[v] = true
+	end
+	return t
+end
+
+local KEYWORDS = set({
+	"and", "break", "continue", "do", "else", "elseif", "end", "false", "for", "function", "if", "in",
+	"local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+})
+local BUILTINS = set({
+	"print", "warn", "error", "assert", "pcall", "xpcall", "pairs", "ipairs", "next", "select", "tostring",
+	"tonumber", "type", "typeof", "rawget", "rawset", "rawequal", "rawlen", "setmetatable", "getmetatable",
+	"require", "loadstring", "tick", "time", "wait", "spawn", "delay", "task", "game", "workspace", "script",
+	"math", "string", "table", "os", "coroutine", "bit32", "utf8", "debug", "Instance", "Vector2", "Vector3",
+	"CFrame", "Color3", "UDim", "UDim2", "Enum", "Ray", "Random", "TweenInfo", "BrickColor", "NumberRange",
+	"NumberSequence", "ColorSequence", "Rect", "Region3", "Axes", "Faces", "shared", "_G", "_VERSION", "self",
+	"getgenv", "getrenv", "getfenv", "setfenv", "unpack", "newproxy", "collectgarbage",
+})
+
+local function esc(s)
+	return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&apos;"))
+end
+
+-- hasil: array per baris (string rich text)
+local function highlight(src)
+	local lines, buf = {}, {}
+	local function emit(str, color)
+		local start = 1
+		while true do
+			local nl = str:find("\n", start, true)
+			local seg = str:sub(start, nl and nl - 1 or #str)
+			if #seg > 0 then
+				if color then
+					buf[#buf + 1] = '<font color="' .. color .. '">' .. esc(seg) .. "</font>"
+				else
+					buf[#buf + 1] = esc(seg)
+				end
+			end
+			if not nl then
+				break
+			end
+			lines[#lines + 1] = table.concat(buf)
+			buf = {}
+			start = nl + 1
+		end
+	end
+
+	local i, n = 1, #src
+	while i <= n do
+		local c = src:sub(i, i)
+		if c == "-" and src:sub(i + 1, i + 1) == "-" then
+			local eq = src:match("^%-%-%[(=*)%[", i)
+			local e
+			if eq then
+				local _, ce = src:find("]" .. eq .. "]", i + #eq + 4, true)
+				e = ce or n
+			else
+				local nl = src:find("\n", i, true)
+				e = nl and nl - 1 or n
+			end
+			emit(src:sub(i, e), SYN.cm)
+			i = e + 1
+		elseif c == '"' or c == "'" or c == "`" then
+			local j, e = i + 1, nil
+			while j <= n do
+				local d = src:sub(j, j)
+				if d == "\\" then
+					j += 2
+				elseif d == c then
+					e = j
+					break
+				elseif d == "\n" and c ~= "`" then
+					e = j - 1
+					break
+				else
+					j += 1
+				end
+			end
+			e = math.min(e or n, n)
+			emit(src:sub(i, e), SYN.str)
+			i = e + 1
+		elseif c == "[" then
+			local eq = src:match("^%[(=*)%[", i)
+			if eq then
+				local _, ce = src:find("]" .. eq .. "]", i + #eq + 2, true)
+				local e = ce or n
+				emit(src:sub(i, e), SYN.str)
+				i = e + 1
+			else
+				emit(c)
+				i += 1
+			end
+		elseif c:find("%d") or (c == "." and src:find("^%.%d", i)) then
+			local s2, e2 = src:find("^0[xX][%x_]+", i)
+			if not s2 then
+				s2, e2 = src:find("^0[bB][01_]+", i)
+			end
+			if not s2 then
+				s2, e2 = src:find("^%d[%d_]*%.?[%d_]*", i)
+				if not s2 then
+					s2, e2 = src:find("^%.%d[%d_]*", i)
+				end
+				if src:sub(e2, e2) == "." and src:sub(e2 + 1, e2 + 1) == "." then
+					e2 -= 1
+				end
+				local _, ee = src:find("^[eE][+-]?%d+", e2 + 1)
+				if ee then
+					e2 = ee
+				end
+			end
+			emit(src:sub(i, e2), SYN.num)
+			i = e2 + 1
+		elseif c:find("[%a_]") then
+			local _, e2 = src:find("^[%a_][%w_]*", i)
+			local word = src:sub(i, e2)
+			local prevc = i > 1 and src:sub(i - 1, i - 1) or ""
+			local color
+			if prevc == "." or prevc == ":" then
+				if src:find("^%s*%(", e2 + 1) then
+					color = SYN.fn
+				end
+			elseif KEYWORDS[word] then
+				color = SYN.kw
+			elseif BUILTINS[word] then
+				color = SYN.bi
+			elseif src:find("^%s*%(", e2 + 1) then
+				color = SYN.fn
+			end
+			emit(word, color)
+			i = e2 + 1
+		else
+			local s2, e2 = src:find("^[^%w_\"'`%-%[]+", i)
+			if s2 then
+				emit(src:sub(s2, e2))
+				i = e2 + 1
+			else
+				emit(c)
+				i += 1
+			end
+		end
+	end
+	lines[#lines + 1] = table.concat(buf)
+	return lines
+end
+
+local lineH = TextService:GetTextSize("A", 13, Enum.Font.Code, Vector2.new(1e4, 1e4)).Y
+local MAX_HL = 100000
+local hlLines, hlOn = nil, true
+local wFirst, wLast = -1, -1
+
+local function renderWindow(force)
+	if not hlOn or not hlLines then
+		return
+	end
+	local y = editorScroll.CanvasPosition.Y
+	local first = math.max(1, math.floor(y / lineH) - 15)
+	first = math.min(first, #hlLines)
+	local last = math.min(#hlLines, first + math.ceil(240 / lineH) + 40)
+	if not force and first == wFirst and last == wLast then
+		return
+	end
+	wFirst, wLast = first, last
+	hlLabel.Position = UDim2.fromOffset(8, 8 + (first - 1) * lineH)
+	hlLabel.Text = table.concat(hlLines, "\n", first, last)
+end
+
+local function retokenize()
+	local text = editor.Text:gsub("\r", "")
+	if #text > MAX_HL then
+		hlOn = false
+		hlLines = nil
+		editor.TextTransparency = 0
+		hlLabel.Visible = false
+		return
+	end
+	hlOn = true
+	editor.TextTransparency = 1
+	hlLabel.Visible = true
+	hlLines = highlight(text)
+	renderWindow(true)
+end
+
+local hlQueued = false
+local function queueHighlight()
+	if hlQueued then
+		return
+	end
+	hlQueued = true
+	task.defer(function()
+		hlQueued = false
+		retokenize()
+	end)
+end
+
+local function updateGutter()
+	local n = 1
+	for _ in editor.Text:gmatch("\n") do
+		n += 1
+	end
+	n = math.min(n, 5000)
+	local t = table.create(n)
+	for i = 1, n do
+		t[i] = tostring(i)
+	end
+	gutterLabel.Text = table.concat(t, "\n")
+end
+
+editorScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+	gutterLabel.Position = UDim2.fromOffset(0, 8 - editorScroll.CanvasPosition.Y)
+	renderWindow(false)
+end)
+
+--// ========== Dialog (input / konfirmasi / pilih) ==========
+local overlay = create("Frame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Active = true,
+	Visible = false,
+	ZIndex = 50,
+	Parent = main,
+})
+local card = create("CanvasGroup", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(280, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	GroupTransparency = 1,
+	Parent = overlay,
+})
+corner(card, 8)
+create("UIStroke", { Color = C.line, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = card })
+create("UIPadding", {
+	PaddingTop = UDim.new(0, 14),
+	PaddingBottom = UDim.new(0, 14),
+	PaddingLeft = UDim.new(0, 14),
+	PaddingRight = UDim.new(0, 14),
+	Parent = card,
+})
+create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = card })
+local cardScale = create("UIScale", { Scale = 0.94, Parent = card })
+
+local dialogOpen = false
+local function closeDialog()
+	dialogOpen = false
+	tw(overlay, 0.12, { BackgroundTransparency = 1 })
+	tw(card, 0.12, { GroupTransparency = 1 })
+	tw(cardScale, 0.12, { Scale = 0.94 })
+	task.delay(0.13, function()
+		if not dialogOpen then
+			overlay.Visible = false
+		end
+	end)
+end
+
+local function showDialog(spec)
+	for _, c in ipairs(card:GetChildren()) do
+		if c:IsA("GuiObject") then
+			c:Destroy()
+		end
+	end
+	local ord = 0
+	local function lo()
+		ord += 1
+		return ord
+	end
+
+	create("TextLabel", {
+		Text = spec.title,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = C.text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 18),
+		LayoutOrder = lo(),
+		Parent = card,
+	})
+	if spec.message then
+		create("TextLabel", {
+			Text = spec.message,
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextColor3 = C.sub,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = lo(),
+			Parent = card,
+		})
+	end
+
+	local input
+	if spec.input ~= nil then
+		input = create("TextBox", {
+			Text = spec.input,
+			PlaceholderText = spec.placeholder or "",
+			PlaceholderColor3 = C.dim,
+			ClearTextOnFocus = false,
+			TextColor3 = C.text,
+			Font = Enum.Font.Gotham,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			BackgroundColor3 = C.bg,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 32),
+			LayoutOrder = lo(),
+			Parent = card,
+		})
+		corner(input, 5)
+		create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = input })
+		local st = create("UIStroke", {
+			Color = C.line,
+			Thickness = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Parent = input,
+		})
+		input.Focused:Connect(function()
+			tw(st, 0.12, { Color = C.accent })
+		end)
+		input.FocusLost:Connect(function()
+			tw(st, 0.12, { Color = C.line })
+		end)
+	end
+
+	if spec.options then
+		local h = math.min(#spec.options * 30, 150)
+		local sc = create("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 0, h),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = C.dim,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(),
+			LayoutOrder = lo(),
+			Parent = card,
+		})
+		create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sc })
+		for i, o in ipairs(spec.options) do
+			local b = create("TextButton", {
+				Text = o.label,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 12,
+				TextColor3 = o.current and C.accentLight or C.text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				AutoButtonColor = false,
+				BackgroundColor3 = C.surface,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Size = UDim2.new(1, -6, 0, 28),
+				LayoutOrder = i,
+				Parent = sc,
+			})
+			corner(b, 5)
+			create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = b })
+			b.MouseEnter:Connect(function()
+				tw(b, 0.08, { BackgroundTransparency = 0.3 })
+			end)
+			b.MouseLeave:Connect(function()
+				tw(b, 0.08, { BackgroundTransparency = 1 })
+			end)
+			b.MouseButton1Click:Connect(function()
+				closeDialog()
+				spec.onChoose(o.value)
+			end)
+		end
+	end
+
+	local err = create("TextLabel", {
+		Text = "",
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextColor3 = C.err,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = lo(),
+		Parent = card,
+	})
+
+	local row = create("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 30),
+		LayoutOrder = lo(),
+		Parent = card,
+	})
+	create("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		Padding = UDim.new(0, 8),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = row,
+	})
+	local cancel = textButton(row, spec.cancel or "Batal", C.surface, C.text, 72, 30)
+	cancel.LayoutOrder = 1
+	cancel.MouseButton1Click:Connect(closeDialog)
+
+	local submitted = false
+	local function submit()
+		if submitted then
+			return
+		end
+		if spec.onSubmit then
+			local e = spec.onSubmit(input and input.Text or nil)
+			if e then
+				err.Text = e
+				return
+			end
+		end
+		submitted = true
+		closeDialog()
+	end
+	if not spec.options then
+		local ok = textButton(row, spec.ok or "OK", spec.danger and C.err or C.accent, Color3.new(1, 1, 1), 78, 30)
+		ok.LayoutOrder = 2
+		ok.MouseButton1Click:Connect(submit)
+	end
+	if input then
+		input.FocusLost:Connect(function(enter)
+			if enter then
+				submit()
+			end
+		end)
+	end
+
+	dialogOpen = true
+	overlay.Visible = true
+	card.GroupTransparency = 1
+	cardScale.Scale = 0.94
+	tw(overlay, 0.12, { BackgroundTransparency = 0.4 })
+	tw(card, 0.14, { GroupTransparency = 0 })
+	tw(cardScale, 0.18, { Scale = 1 }, Enum.EasingStyle.Back)
+	if input then
+		task.delay(0.16, function()
+			if dialogOpen and input.Parent then
+				input:CaptureFocus()
+				input.SelectionStart = 1
+				input.CursorPosition = #input.Text + 1
+			end
+		end)
+	end
+end
+
+--// ========== Data: script, folder, simpan ==========
+local store = { nextId = 1, folders = {}, scripts = {} }
+local live = {} -- id -> teks yang belum disimpan
+local openTabs = {} -- daftar id yang terbuka
+local activeId = nil
+local loading = false
+local tabObjs = {}
+
+local refreshTabs, refreshLibrary, setActive, closeTab
+
+local function byId(id)
+	if id == nil then
+		return nil
+	end
+	for _, s in ipairs(store.scripts) do
+		if s.id == id then
+			return s
+		end
+	end
+	return nil
+end
+
+local function persist()
+	if not writefile then
+		return false
+	end
+	local ok = pcall(function()
+		ensureFolder()
+		writefile(
+			DATA,
+			HttpService:JSONEncode({
+				nextId = store.nextId,
+				folders = store.folders,
+				scripts = store.scripts,
+				open = openTabs,
+				active = activeId,
+			})
+		)
+	end)
+	return ok
+end
+
+local function loadStore()
+	local ok, raw = pcall(function()
+		if isfile and readfile and isfile(DATA) then
+			return readfile(DATA)
+		end
+		return nil
+	end)
+	if not (ok and raw) then
+		return nil
+	end
+	local ok2, t = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	if not (ok2 and type(t) == "table") then
+		return nil
+	end
+	store.nextId = tonumber(t.nextId) or 1
+	store.folders = {}
+	for _, f in ipairs(t.folders or {}) do
+		if type(f) == "table" and type(f.name) == "string" then
+			table.insert(store.folders, { name = f.name, open = f.open ~= false })
+		end
+	end
+	store.scripts = {}
+	for _, s in ipairs(t.scripts or {}) do
+		if type(s) == "table" and s.id and type(s.name) == "string" then
+			table.insert(store.scripts, {
+				id = s.id,
+				name = s.name,
+				folder = type(s.folder) == "string" and s.folder or "",
+				source = type(s.source) == "string" and s.source or "",
+			})
+			store.nextId = math.max(store.nextId, s.id + 1)
+		end
+	end
+	return t
+end
+
+local function isDirty(id)
+	local s = byId(id)
+	if not s then
+		return false
+	end
+	local txt = (id == activeId) and editor.Text or live[id]
+	return txt ~= nil and txt ~= s.source
+end
+
+local function updateDirty()
+	local o = activeId ~= nil and tabObjs[activeId] or nil
+	if o and o.dot then
+		o.dot.Visible = isDirty(activeId)
+	end
+end
+
+local function freeName()
+	local n = 1
+	while true do
+		local name = "Script " .. n
+		local used = false
+		for _, s in ipairs(store.scripts) do
+			if s.name == name then
+				used = true
+				break
+			end
+		end
+		if not used then
+			return name
+		end
+		n += 1
+	end
+end
+
+local function nameTaken(name, folder, exceptId)
+	for _, s in ipairs(store.scripts) do
+		if s.id ~= exceptId and (s.folder or "") == (folder or "") and s.name:lower() == name:lower() then
+			return true
+		end
+	end
+	return false
+end
+
+local function uniqueName(base, folder, exceptId)
+	if not nameTaken(base, folder, exceptId) then
+		return base
+	end
+	local n = 2
+	while nameTaken(("%s (%d)"):format(base, n), folder, exceptId) do
+		n += 1
+	end
+	return ("%s (%d)"):format(base, n)
+end
+
+local function folderTaken(name, exceptName)
+	for _, f in ipairs(store.folders) do
+		if f.name ~= exceptName and f.name:lower() == name:lower() then
+			return true
+		end
+	end
+	return false
+end
+
+local function validName(v)
+	v = (v or ""):match("^%s*(.-)%s*$")
+	if v == "" then
+		return nil, "Nama tidak boleh kosong"
+	end
+	if #v > 28 then
+		return nil, "Maksimal 28 karakter"
+	end
+	return v
+end
+
+local function addScript(name, folder, source)
+	local s = { id = store.nextId, name = name, folder = folder or "", source = source or "" }
+	store.nextId += 1
+	table.insert(store.scripts, s)
+	return s
+end
+
+local function createScript(folder)
+	return addScript(freeName(), folder, "")
+end
+
+--// Keadaan kosong: tidak ada script yang terbuka (tidak membuat script baru otomatis)
+local function showEmpty()
+	activeId = nil
+	loading = true
+	editor.Text = ""
+	loading = false
+	editorScroll.CanvasPosition = Vector2.new(0, 0)
+	refreshTabs()
+	refreshLibrary()
+end
+
+--// ----- Tab strip -----
+refreshTabs = function()
+	for _, c in ipairs(strip:GetChildren()) do
+		if c:IsA("GuiObject") and c ~= plusBtn then
+			c:Destroy()
+		end
+	end
+	tabObjs = {}
+	for i, id in ipairs(openTabs) do
+		local s = byId(id)
+		if s then
+			local active = id == activeId
+			local w = math.clamp(
+				TextService:GetTextSize(s.name, 12, Enum.Font.GothamMedium, Vector2.new(1e4, 26)).X + 52,
+				84,
+				170
+			)
+			local b = create("TextButton", {
+				Text = "",
+				AutoButtonColor = false,
+				BackgroundColor3 = active and C.bg or C.surface,
+				BackgroundTransparency = active and 0 or 1,
+				BorderSizePixel = 0,
+				Size = UDim2.fromOffset(w, STRIP - 1),
+				LayoutOrder = i,
+				Parent = strip,
+			})
+			create("TextLabel", {
+				Text = s.name,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 12,
+				TextColor3 = active and C.text or C.sub,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(10, 0),
+				Size = UDim2.new(1, -42, 1, 0),
+				Parent = b,
+			})
+			local dot = create("Frame", {
+				Size = UDim2.fromOffset(6, 6),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(1, -33, 0.5, 0),
+				BackgroundColor3 = C.accent,
+				BorderSizePixel = 0,
+				Visible = isDirty(id),
+				Parent = b,
+			})
+			corner(dot, 3)
+			local x = create("TextButton", {
+				Text = "",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -5, 0.5, 0),
+				Size = UDim2.fromOffset(20, 20),
+				Parent = b,
+			})
+			local xi = icon(x, "close", 10, UDim2.fromScale(0.5, 0.5), C.sub, "x")
+			x.MouseEnter:Connect(function()
+				tint(xi, C.text, 0.08)
+			end)
+			x.MouseLeave:Connect(function()
+				tint(xi, C.sub, 0.08)
+			end)
+			if active then
+				local ul = create("Frame", {
+					AnchorPoint = Vector2.new(0, 1),
+					Position = UDim2.fromScale(0, 1),
+					Size = UDim2.new(0, 0, 0, 2),
+					BackgroundColor3 = C.accent,
+					BorderSizePixel = 0,
+					Parent = b,
+				})
+				tw(ul, 0.2, { Size = UDim2.new(1, 0, 0, 2) })
+			else
+				b.MouseEnter:Connect(function()
+					tw(b, 0.08, { BackgroundTransparency = 0.5 })
+				end)
+				b.MouseLeave:Connect(function()
+					tw(b, 0.08, { BackgroundTransparency = 1 })
+				end)
+			end
+			b.MouseButton1Click:Connect(function()
+				if id ~= activeId then
+					setActive(id)
+				end
+			end)
+			x.MouseButton1Click:Connect(function()
+				closeTab(id)
+			end)
+			tabObjs[id] = { dot = dot }
+		end
+	end
+end
+
+setActive = function(id)
+	local s = byId(id)
+	if not s then
+		return
+	end
+	if activeId and activeId ~= id then
+		live[activeId] = editor.Text
+	end
+	activeId = id
+	loading = true
+	editor.Text = live[id] or s.source
+	loading = false
+	editorScroll.CanvasPosition = Vector2.new(0, 0)
+	refreshTabs()
+	refreshLibrary()
+end
+
+local function openScript(id)
+	if not table.find(openTabs, id) then
+		table.insert(openTabs, id)
+	end
+	setActive(id)
+end
+
+local function newScript(folder)
+	local s = createScript(folder)
+	openScript(s.id)
+	persist()
+	setStatus("Dibuat: " .. s.name, C.ok)
+	return s
+end
+
+closeTab = function(id)
+	local idx = table.find(openTabs, id)
+	if not idx then
+		return
+	end
+	if id == activeId then
+		live[id] = editor.Text
+	end
+	table.remove(openTabs, idx)
+	if id == activeId then
+		if #openTabs > 0 then
+			setActive(openTabs[math.min(idx, #openTabs)])
+		else
+			showEmpty()
+		end
+	else
+		refreshTabs()
+	end
+end
+
+--// ----- Aksi script / folder -----
+local function renameScript(s)
+	showDialog({
+		title = "Rename script",
+		input = s.name,
+		ok = "Simpan",
+		onSubmit = function(v)
+			local name, e = validName(v)
+			if not name then
+				return e
+			end
+			if name ~= s.name and nameTaken(name, s.folder, s.id) then
+				return "Nama sudah dipakai di folder ini"
+			end
+			s.name = name
+			persist()
+			refreshTabs()
+			refreshLibrary()
+			setStatus("Rename: " .. name, C.ok)
+		end,
+	})
+end
+
+-- Hapus script: benar-benar hilang dari library, tab, dan file. Tidak membuat script baru.
+local function deleteScript(s)
+	showDialog({
+		title = "Hapus script",
+		message = ('Hapus "%s"? Tindakan ini tidak bisa dibatalkan.'):format(s.name),
+		ok = "Hapus",
+		danger = true,
+		onSubmit = function()
+			local wasActive = s.id == activeId
+			local idx = table.find(openTabs, s.id)
+			if idx then
+				table.remove(openTabs, idx)
+			end
+			live[s.id] = nil
+			local pos = table.find(store.scripts, s)
+			if pos then
+				table.remove(store.scripts, pos)
+			end
+			if wasActive then
+				activeId = nil
+				if #openTabs > 0 then
+					setActive(openTabs[math.min(idx or 1, #openTabs)])
+				else
+					showEmpty()
+				end
+			else
+				refreshTabs()
+				refreshLibrary()
+			end
+			persist()
+			setStatus("Dihapus: " .. s.name, C.sub)
+		end,
+	})
+end
+
+local function moveScript(s)
+	local opts = { { label = "(Tanpa folder)", value = "", current = (s.folder or "") == "" } }
+	for _, f in ipairs(store.folders) do
+		table.insert(opts, { label = f.name, value = f.name, current = s.folder == f.name })
+	end
+	showDialog({
+		title = "Pindah ke folder",
+		options = opts,
+		onChoose = function(folder)
+			if folder == (s.folder or "") then
+				return
+			end
+			if nameTaken(s.name, folder, s.id) then
+				s.name = uniqueName(s.name, folder, s.id)
+			end
+			s.folder = folder
+			for _, f in ipairs(store.folders) do
+				if f.name == folder then
+					f.open = true
+				end
+			end
+			persist()
+			refreshTabs()
+			refreshLibrary()
+			setStatus("Dipindah: " .. s.name, C.ok)
+		end,
+	})
+end
+
+local function newFolder()
+	local n = 1
+	while folderTaken("Folder " .. n) do
+		n += 1
+	end
+	showDialog({
+		title = "Folder baru",
+		input = "Folder " .. n,
+		ok = "Buat",
+		onSubmit = function(v)
+			local name, e = validName(v)
+			if not name then
+				return e
+			end
+			if folderTaken(name) then
+				return "Nama folder sudah ada"
+			end
+			table.insert(store.folders, { name = name, open = true })
+			persist()
+			refreshLibrary()
+			setStatus("Folder dibuat: " .. name, C.ok)
+		end,
+	})
+end
+
+local function renameFolder(f)
+	showDialog({
+		title = "Rename folder",
+		input = f.name,
+		ok = "Simpan",
+		onSubmit = function(v)
+			local name, e = validName(v)
+			if not name then
+				return e
+			end
+			if name ~= f.name and folderTaken(name, f.name) then
+				return "Nama folder sudah ada"
+			end
+			for _, s in ipairs(store.scripts) do
+				if s.folder == f.name then
+					s.folder = name
+				end
+			end
+			f.name = name
+			persist()
+			refreshLibrary()
+			setStatus("Rename folder: " .. name, C.ok)
+		end,
+	})
+end
+
+local function deleteFolder(f)
+	showDialog({
+		title = "Hapus folder",
+		message = ('Hapus folder "%s"? Script di dalamnya dipindah ke luar folder.'):format(f.name),
+		ok = "Hapus",
+		danger = true,
+		onSubmit = function()
+			for _, s in ipairs(store.scripts) do
+				if s.folder == f.name then
+					s.name = uniqueName(s.name, "", s.id)
+					s.folder = ""
+				end
+			end
+			local pos = table.find(store.folders, f)
+			if pos then
+				table.remove(store.folders, pos)
+			end
+			persist()
+			refreshTabs()
+			refreshLibrary()
+			setStatus("Folder dihapus", C.sub)
+		end,
+	})
+end
+
+--// ----- Library list -----
+refreshLibrary = function()
+	for _, c in ipairs(libList:GetChildren()) do
+		if c:IsA("GuiObject") then
+			c:Destroy()
+		end
+	end
+	local ord = 0
+
+	local function makeRow(o)
+		ord += 1
+		local r = create("CanvasGroup", {
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundColor3 = C.surface,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			GroupTransparency = 1,
+			LayoutOrder = ord,
+			Parent = libList,
+		})
+		corner(r, 5)
+		local hit = create("TextButton", {
+			Text = "",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			Parent = r,
+		})
+		hit.MouseEnter:Connect(function()
+			tw(r, 0.08, { BackgroundTransparency = 0.5 })
+		end)
+		hit.MouseLeave:Connect(function()
+			tw(r, 0.08, { BackgroundTransparency = 1 })
+		end)
+		hit.MouseButton1Click:Connect(o.onClick)
+		icon(r, o.icon, 14, UDim2.fromOffset(16 + o.indent, 15), o.iconColor or C.sub, o.fb)
+		local reserve = #o.actions * 28 + 10
+		create("TextLabel", {
+			Text = o.text,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 12,
+			TextColor3 = o.color or C.text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(34 + o.indent, 0),
+			Size = UDim2.new(1, -(34 + o.indent + reserve), 1, 0),
+			Parent = r,
+		})
+		for k, a in ipairs(o.actions) do
+			local ab = create("TextButton", {
+				Text = "",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -6 - (k - 1) * 28, 0.5, 0),
+				Size = UDim2.fromOffset(26, 26),
+				Parent = r,
+			})
+			local ai = icon(ab, a[1], 13, UDim2.fromScale(0.5, 0.5), C.sub, a[2])
+			ab.MouseEnter:Connect(function()
+				tint(ai, C.text, 0.08)
+			end)
+			ab.MouseLeave:Connect(function()
+				tint(ai, C.sub, 0.08)
+			end)
+			ab.MouseButton1Click:Connect(a[3])
+		end
+		tw(r, 0.15, { GroupTransparency = 0 })
+	end
+
+	local function scriptRow(s, indent)
+		local active = s.id == activeId
+		return {
+			indent = indent,
+			icon = "file",
+			fb = "-",
+			iconColor = active and C.accent or C.sub,
+			text = s.name,
+			color = active and C.accentLight or C.text,
+			onClick = function()
+				openScript(s.id)
+				switchTab("Editor")
+			end,
+			actions = {
+				{ "trash", "x", function() deleteScript(s) end },
+				{ "folder", "f", function() moveScript(s) end },
+				{ "edit", "r", function() renameScript(s) end },
+			},
+		}
+	end
+
+	if #store.folders == 0 and #store.scripts == 0 then
+		create("TextLabel", {
+			Text = "Library kosong. Tekan Script untuk membuat yang baru.",
+			Font = Enum.Font.Gotham,
+			TextSize = 12,
+			TextColor3 = C.sub,
+			TextWrapped = true,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 40),
+			LayoutOrder = 1,
+			Parent = libList,
+		})
+		return
+	end
+
+	for _, f in ipairs(store.folders) do
+		local count = 0
+		for _, s in ipairs(store.scripts) do
+			if s.folder == f.name then
+				count += 1
+			end
+		end
+		makeRow({
+			indent = 0,
+			icon = "folder",
+			fb = "F",
+			iconColor = f.open and C.accent or C.sub,
+			text = ("%s  (%d)"):format(f.name, count),
+			color = C.text,
+			onClick = function()
+				f.open = not f.open
+				persist()
+				refreshLibrary()
+			end,
+			actions = {
+				{ "trash", "x", function() deleteFolder(f) end },
+				{ "edit", "r", function() renameFolder(f) end },
+			},
+		})
+		if f.open then
+			for _, s in ipairs(store.scripts) do
+				if s.folder == f.name then
+					makeRow(scriptRow(s, 16))
+				end
+			end
+		end
+	end
+	for _, s in ipairs(store.scripts) do
+		if (s.folder or "") == "" then
+			makeRow(scriptRow(s, 0))
+		end
+	end
+end
+
+--// ========== Aksi toolbar ==========
+local function runSource(src, label)
+	if src:gsub("%s", "") == "" then
+		setStatus("Editor kosong", C.err)
+		log("editor kosong", "err")
+		return
+	end
+	setStatus("Menjalankan...", C.sub)
+
+	local okCall, fn, cerr = pcall(function()
+		return loadstring(src, label or "Nocturne")
+	end)
+	if not okCall then
+		setStatus("loadstring tidak tersedia", C.err)
+		log("loadstring tidak tersedia di environment ini: " .. tostring(fn), "err")
+		return
+	end
+	if not fn then
+		setStatus("Syntax error", C.err)
+		log(tostring(cerr), "err")
+		return
+	end
+	task.spawn(function()
+		local ok, e = xpcall(fn, function(m)
+			return debug.traceback(tostring(m), 2)
+		end)
+		if ok then
+			setStatus("Executed", C.ok)
+			log("executed " .. tostring(label or "Nocturne"), "ok")
+		else
+			setStatus("Runtime error", C.err)
+			log(e, "err")
+		end
+	end)
+end
+
+local function execute()
+	runSource(editor.Text, "Nocturne")
+end
+
+local function saveCurrent()
+	local s = byId(activeId)
+	if not s then
+		-- tidak ada script aktif: simpan isi editor sebagai script baru
+		if editor.Text:gsub("%s", "") == "" then
+			setStatus("Tidak ada yang disimpan", C.warn)
+			return
+		end
+		s = createScript("")
+		s.source = editor.Text
+		table.insert(openTabs, s.id)
+		activeId = s.id
+		live[s.id] = nil
+		local ok0 = persist()
+		refreshTabs()
+		refreshLibrary()
+		setStatus(ok0 and ("Saved: " .. s.name) or "Tersimpan di sesi saja", ok0 and C.ok or C.warn)
+		return
+	end
+	s.source = editor.Text
+	live[s.id] = nil
+	local ok = persist()
+	updateDirty()
+	if ok then
+		setStatus("Saved: " .. s.name, C.ok)
+		log("saved " .. s.name, "ok")
+	else
+		setStatus("Tersimpan di sesi saja (writefile tidak tersedia)", C.warn)
+		log("writefile tidak tersedia, script hanya tersimpan selama UI terbuka", "warn")
+	end
+end
+
+execBtn.MouseButton1Click:Connect(execute)
+saveBtn.MouseButton1Click:Connect(saveCurrent)
+renameBtn.MouseButton1Click:Connect(function()
+	local s = byId(activeId)
+	if s then
+		renameScript(s)
+	else
+		setStatus("Tidak ada script aktif untuk di-rename", C.warn)
+	end
+end)
+clearBtn.MouseButton1Click:Connect(function()
+	editor.Text = ""
+	setStatus("Cleared", C.sub)
+end)
+copyBtn.MouseButton1Click:Connect(function()
+	local sc = setclipboard or toclipboard
+	if sc then
+		pcall(sc, editor.Text)
+		setStatus("Copied", C.ok)
+	else
+		setStatus("Clipboard tidak tersedia", C.warn)
+	end
+end)
+plusBtn.MouseButton1Click:Connect(function()
+	newScript("")
+end)
+newScriptBtn.MouseButton1Click:Connect(function()
+	newScript("")
+	switchTab("Editor")
+end)
+newFolderBtn.MouseButton1Click:Connect(newFolder)
+
+editor:GetPropertyChangedSignal("Text"):Connect(function()
+	updateGutter()
+	queueHighlight()
+	if not loading then
+		updateDirty()
+	end
+end)
+
+--// ========== ScriptBlox ==========
+-- API publik: https://scriptblox.com/api  (/script/fetch, /script/search, /script/trending, /script/raw/<id>)
+local API = "https://scriptblox.com/api"
+local sb = { mode = "latest", query = "", page = 1, total = 1, loading = false, items = {}, last = 0, opened = false }
+local sbOrder, sbMore, sbBarTween = 0, nil, nil
+
+local function sanitize(s)
+	return (tostring(s):gsub("[^%w_%-]", ""))
+end
+
+--// Thumbnail: download -> writefile -> getcustomasset (hanya PNG/JPEG; webp tidak didukung Roblox)
+local imgCache, imgPending, imgQueue, imgActive = {}, {}, {}, 0
+
+local function loadRemoteImage(key, url)
+	local getAsset = getcustomasset or getsynasset
+	if not (writefile and isfile and getAsset) then
+		return nil
+	end
+	if type(url) ~= "string" or url == "" then
+		return nil
+	end
+	if url:sub(1, 1) == "/" then
+		url = "https://scriptblox.com" .. url
+	end
+	local base = FOLDER .. "/img/" .. sanitize(key)
+	for _, ext in ipairs({ ".png", ".jpg" }) do
+		if isfile(base .. ext) then
+			local ok, id = pcall(getAsset, base .. ext)
+			if ok and id then
+				return id
+			end
+		end
+	end
+	local data = httpGet(url)
+	if not data or #data < 16 then
+		return nil
+	end
+	local ext
+	if data:sub(1, 4) == "\137PNG" then
+		ext = ".png"
+	elseif data:sub(1, 3) == "\255\216\255" then
+		ext = ".jpg"
+	else
+		return nil
+	end
+	ensureFolder(FOLDER)
+	ensureFolder(FOLDER .. "/img")
+	pcall(writefile, base .. ext, data)
+	local ok, id = pcall(getAsset, base .. ext)
+	if ok and id then
+		return id
+	end
+	return nil
+end
+
+local pumpImages
+pumpImages = function()
+	while imgActive < 3 and #imgQueue > 0 do
+		local job = table.remove(imgQueue, 1)
+		imgActive += 1
+		task.spawn(function()
+			local id = loadRemoteImage(job.key, job.url)
+			imgCache[job.key] = id or false
+			imgPending[job.key] = nil
+			imgActive -= 1
+			for _, cb in ipairs(job.cbs) do
+				pcall(cb, id)
+			end
+			pumpImages()
+		end)
+	end
+end
+
+local function requestImage(key, url, cb)
+	if imgCache[key] ~= nil then
+		cb(imgCache[key] or nil)
+		return
+	end
+	if imgPending[key] then
+		table.insert(imgPending[key].cbs, cb)
+		return
+	end
+	local job = { key = key, url = url, cbs = { cb } }
+	imgPending[key] = job
+	table.insert(imgQueue, job)
+	pumpImages()
+end
+
+--// Request JSON
+local function sbRequest(mode, query, page)
+	local url
+	if mode == "trending" then
+		url = API .. "/script/trending"
+	elseif mode == "search" then
+		url = ("%s/script/search?q=%s&page=%d&max=20"):format(API, HttpService:UrlEncode(query), page)
+	else
+		url = ("%s/script/fetch?page=%d&max=20"):format(API, page)
+	end
+	local raw = httpGet(url)
+	if not raw then
+		return nil, "Tidak bisa terhubung ke ScriptBlox (cek HTTP executor / jaringan)"
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	if not ok or type(data) ~= "table" or type(data.result) ~= "table" then
+		return nil, "Respons ScriptBlox tidak valid"
+	end
+	return data.result
+end
+
+local function sbBusy(on)
+	if sbBarTween then
+		sbBarTween:Cancel()
+		sbBarTween = nil
+	end
+	if on then
+		sbBar.Visible = true
+		sbBar.Position = UDim2.fromScale(-0.35, 0)
+		sbBarTween = TweenService:Create(
+			sbBar,
+			TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1),
+			{ Position = UDim2.fromScale(1, 0) }
+		)
+		sbBarTween:Play()
+	else
+		sbBar.Visible = false
+	end
+end
+
+local function clearSb()
+	for _, c in ipairs(sbList:GetChildren()) do
+		if c:IsA("GuiObject") then
+			c:Destroy()
+		end
+	end
+	sbOrder, sbMore = 0, nil
+end
+
+local function sbMessage(text, col)
+	sbOrder += 1
+	local l = create("TextLabel", {
+		Text = text,
+		Font = Enum.Font.Gotham,
+		TextSize = 12,
+		TextColor3 = col or C.sub,
+		TextWrapped = true,
+		TextTransparency = 1,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 44),
+		LayoutOrder = sbOrder,
+		Parent = sbList,
+	})
+	tw(l, 0.15, { TextTransparency = 0 })
+end
+
+local function fmtViews(n)
+	n = tonumber(n) or 0
+	if n >= 1e6 then
+		return ("%.1fM"):format(n / 1e6)
+	elseif n >= 1e3 then
+		return ("%.1fk"):format(n / 1e3)
+	end
+	return tostring(math.floor(n))
+end
+
+--// Ambil kode (dari hasil search, atau /script/raw/<id>)
+local function sbGetCode(item, cb)
+	if type(item.script) == "string" and #item.script > 0 then
+		cb(item.script)
+		return
+	end
+	setStatus("Mengambil kode...", C.sub)
+	task.spawn(function()
+		local raw = httpGet(API .. "/script/raw/" .. HttpService:UrlEncode(tostring(item._id)))
+		if raw and #raw > 0 and not raw:match('^%s*{%s*"') then
+			cb(raw)
+		else
+			setStatus("Gagal mengambil kode script", C.err)
+			log("gagal mengambil kode untuk " .. tostring(item.title), "err")
+		end
+	end)
+end
+
+local function sbTitle(item)
+	local t = tostring(item.title or "Script")
+	t = t:gsub("%c", " ")
+	t = t:match("^%s*(.-)%s*$"):sub(1, 28)
+	if t == "" then
+		t = "Script"
+	end
+	return t
+end
+
+local function sbSave(item, open)
+	sbGetCode(item, function(code)
+		local s = addScript(uniqueName(sbTitle(item), "", nil), "", code)
+		persist()
+		if open then
+			openScript(s.id)
+			switchTab("Editor")
+			setStatus("Dimuat ke editor: " .. s.name, C.ok)
+		else
+			refreshLibrary()
+			setStatus("Disimpan ke library: " .. s.name, C.ok)
+		end
+	end)
+end
+
+local function sbRun(item)
+	showDialog({
+		title = "Jalankan script?",
+		message = "Kode ini berasal dari pihak ketiga dan belum lu periksa. Lebih aman pakai Load dulu, baca isinya di editor, baru Execute.",
+		ok = "Jalankan",
+		danger = true,
+		onSubmit = function()
+			sbGetCode(item, function(code)
+				runSource(code, sbTitle(item))
+			end)
+		end,
+	})
+end
+
+--// Baris hasil
+local function sbAddRow(item)
+	sbOrder += 1
+	local r = create("CanvasGroup", {
+		Size = UDim2.new(1, 0, 0, 54),
+		BackgroundColor3 = C.surface,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		GroupTransparency = 1,
+		LayoutOrder = sbOrder,
+		Parent = sbList,
+	})
+	corner(r, 6)
+	local hit = create("TextButton", {
+		Text = "",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Parent = r,
+	})
+	hit.MouseEnter:Connect(function()
+		tw(r, 0.08, { BackgroundTransparency = 0.5 })
+	end)
+	hit.MouseLeave:Connect(function()
+		tw(r, 0.08, { BackgroundTransparency = 1 })
+	end)
+	hit.MouseButton1Click:Connect(function()
+		sbSave(item, true)
+	end)
+
+	local game_ = type(item.game) == "table" and item.game or nil
+	local gname = game_ and game_.name or (item.isUniversal and "Universal") or "Unknown"
+
+	local thumb = create("Frame", {
+		Position = UDim2.fromOffset(8, 7),
+		Size = UDim2.fromOffset(72, 40),
+		BackgroundColor3 = C.bg,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Parent = r,
+	})
+	corner(thumb, 4)
+	local okc, letter = pcall(function()
+		return utf8.char(utf8.codepoint(gname, 1))
+	end)
+	local fbl = create("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = okc and letter:upper() or "?",
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextColor3 = C.dim,
+		Parent = thumb,
+	})
+	local img = create("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ImageTransparency = 1,
+		ScaleType = Enum.ScaleType.Crop,
+		Parent = thumb,
+	})
+	local imgUrl = (game_ and game_.imageUrl) or item.image
+	local imgKey = "g_" .. sanitize((game_ and (game_._id or game_.gameId)) or item._id or gname)
+	requestImage(imgKey, imgUrl, function(id)
+		if id and img.Parent then
+			img.Image = id
+			fbl.Visible = false
+			tw(img, 0.2, { ImageTransparency = 0 })
+		end
+	end)
+
+	create("TextLabel", {
+		Text = tostring(item.title or "Untitled"),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextColor3 = C.text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(88, 8),
+		Size = UDim2.new(1, -(88 + 100), 0, 16),
+		Parent = r,
+	})
+
+	local parts = { esc(tostring(gname)), fmtViews(item.views) .. " views" }
+	if item.scriptType == "paid" then
+		parts[#parts + 1] = '<font color="' .. hex(C.warn) .. '">Paid</font>'
+	else
+		parts[#parts + 1] = '<font color="' .. hex(C.ok) .. '">Free</font>'
+	end
+	if item.key then
+		parts[#parts + 1] = '<font color="' .. hex(C.warn) .. '">Key</font>'
+	end
+	if item.verified then
+		parts[#parts + 1] = '<font color="' .. hex(C.accentLight) .. '">Verified</font>'
+	end
+	if item.isPatched then
+		parts[#parts + 1] = '<font color="' .. hex(C.err) .. '">Patched</font>'
+	end
+	create("TextLabel", {
+		Text = table.concat(parts, "  /  "),
+		RichText = true,
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextColor3 = C.sub,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(88, 28),
+		Size = UDim2.new(1, -(88 + 100), 0, 16),
+		Parent = r,
+	})
+
+	local actions = {
+		{ "download", "l", function() sbSave(item, true) end },
+		{ "play", ">", function() sbRun(item) end },
+		{ "save", "s", function() sbSave(item, false) end },
+	}
+	for k, a in ipairs(actions) do
+		local ab = create("TextButton", {
+			Text = "",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -6 - (k - 1) * 30, 0.5, 0),
+			Size = UDim2.fromOffset(28, 28),
+			Parent = r,
+		})
+		local ai = icon(ab, a[1], 14, UDim2.fromScale(0.5, 0.5), C.sub, a[2])
+		ab.MouseEnter:Connect(function()
+			tint(ai, k == 2 and C.warn or C.text, 0.08)
+		end)
+		ab.MouseLeave:Connect(function()
+			tint(ai, C.sub, 0.08)
+		end)
+		ab.MouseButton1Click:Connect(a[3])
+	end
+	tw(r, 0.15, { GroupTransparency = 0 })
+end
+
+local sbLoad
+local function sbSetMore()
+	if sbMore then
+		sbMore:Destroy()
+		sbMore = nil
+	end
+	if sb.page < sb.total then
+		sbOrder += 1
+		sbMore = create("TextButton", {
+			Text = ("Muat lagi  (halaman %d dari %d)"):format(sb.page + 1, sb.total),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 12,
+			TextColor3 = C.text,
+			AutoButtonColor = false,
+			BackgroundColor3 = C.surface,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 30),
+			LayoutOrder = sbOrder,
+			Parent = sbList,
+		})
+		corner(sbMore, 6)
+		hoverBg(sbMore, C.surface, C.surface:Lerp(Color3.new(1, 1, 1), 0.09), C.surface:Lerp(Color3.new(0, 0, 0), 0.2))
+		sbMore.MouseButton1Click:Connect(function()
+			sbLoad(sb.mode, sb.query, sb.page + 1, true)
+		end)
+	end
+end
+
+sbLoad = function(mode, query, page, append)
+	if sb.loading then
+		setStatus("ScriptBlox masih memuat...", C.sub)
+		return
+	end
+	sb.loading = true
+	sbBusy(true)
+	if not append then
+		clearSb()
+		sb.items = {}
+		sbMessage("Memuat...", C.sub)
+	end
+	task.spawn(function()
+		local wait_ = 0.8 - (os.clock() - sb.last)
+		if wait_ > 0 then
+			task.wait(wait_)
+		end
+		local result, err = sbRequest(mode, query, page)
+		sb.last = os.clock()
+		sb.loading = false
+		sbBusy(false)
+		if not result then
+			if not append then
+				clearSb()
+			end
+			sbMessage(err, C.err)
+			setStatus(err, C.err)
+			log("scriptblox: " .. tostring(err), "err")
+			return
+		end
+		local list = result.scripts or {}
+		if not append then
+			clearSb()
+		else
+			if sbMore then
+				sbMore:Destroy()
+				sbMore = nil
+			end
+		end
+		sb.mode, sb.query, sb.page = mode, query, page
+		sb.total = (mode == "trending") and 1 or (tonumber(result.totalPages) or page)
+		for _, it in ipairs(list) do
+			if type(it) == "table" then
+				table.insert(sb.items, it)
+				sbAddRow(it)
+			end
+		end
+		if #sb.items == 0 then
+			sbMessage("Tidak ada hasil.", C.sub)
+		end
+		sbSetMore()
+		setStatus(("ScriptBlox: %d script dimuat"):format(#sb.items), C.sub)
+	end)
+end
+
+local function sbSearch()
+	local q = sbInput.Text:match("^%s*(.-)%s*$")
+	if q == "" then
+		setChip(chipLatest, true)
+		setChip(chipTrending, false)
+		sbLoad("latest", "", 1, false)
+	else
+		setChip(chipLatest, false)
+		setChip(chipTrending, false)
+		sbLoad("search", q, 1, false)
+	end
+end
+sbInput.FocusLost:Connect(function(enter)
+	if enter then
+		sbSearch()
+	end
+end)
+chipLatest.MouseButton1Click:Connect(function()
+	sbInput.Text = ""
+	setChip(chipLatest, true)
+	setChip(chipTrending, false)
+	sbLoad("latest", "", 1, false)
+end)
+chipTrending.MouseButton1Click:Connect(function()
+	sbInput.Text = ""
+	setChip(chipLatest, false)
+	setChip(chipTrending, true)
+	sbLoad("trending", "", 1, false)
+end)
+setChip(chipLatest, true)
+
+sbOnOpen = function()
+	if not sb.opened then
+		sb.opened = true
+		sbLoad("latest", "", 1, false)
+	end
+end
+
+--// ========== Minimize, tutup, drag ==========
+local mini = create("TextButton", {
+	Text = "",
+	AutoButtonColor = false,
+	BackgroundColor3 = C.bar,
+	BorderSizePixel = 0,
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, -40, 0.5, 0),
+	Size = UDim2.fromOffset(34, 34),
+	Visible = false,
+	Parent = gui,
+})
+corner(mini, 7)
+create("UIStroke", { Color = C.accent, Thickness = 1, Parent = mini })
+icon(mini, "code", 16, UDim2.fromScale(0.5, 0.5), C.accent, "<>")
+
+local shown = true
+local function setShown(v)
+	shown = v
+	if v then
+		tw(mini, 0.15, { Position = UDim2.new(0, -40, 0.5, 0) })
+		task.delay(0.15, function()
+			if shown then
+				mini.Visible = false
+			end
+		end)
+		main.Visible = true
+		tw(main, 0.18, { GroupTransparency = 0 })
+		tw(scale, 0.22, { Scale = baseScale() }, Enum.EasingStyle.Back)
+	else
+		tw(main, 0.14, { GroupTransparency = 1 })
+		tw(scale, 0.14, { Scale = baseScale() * 0.94 })
+		task.delay(0.15, function()
+			if not shown then
+				main.Visible = false
+			end
+		end)
+		mini.Visible = true
+		tw(mini, 0.2, { Position = UDim2.new(0, 12, 0.5, 0) }, Enum.EasingStyle.Back)
+	end
+end
+
+minBtn.MouseButton1Click:Connect(function()
+	setShown(false)
+end)
+mini.MouseButton1Click:Connect(function()
+	setShown(true)
+end)
+connect(UserInputService.InputBegan, function(input)
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		setShown(not shown)
+	end
+end)
+closeBtn.MouseButton1Click:Connect(function()
+	tw(main, 0.14, { GroupTransparency = 1 })
+	tw(scale, 0.14, { Scale = baseScale() * 0.92 })
+	task.delay(0.16, function()
+		for _, c in ipairs(conns) do
+			c:Disconnect()
+		end
+		gui:Destroy()
+	end)
+end)
+
+local dragging, dragStart, startPos
+top.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = i.Position
+		startPos = main.Position
+		local c
+		c = i.Changed:Connect(function()
+			if i.UserInputState == Enum.UserInputState.End then
+				dragging = false
+				c:Disconnect()
+			end
+		end)
+	end
+end)
+connect(UserInputService.InputChanged, function(i)
+	if
+		dragging
+		and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch)
+	then
+		local d = i.Position - dragStart
+		main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+	end
+end)
+if cam then
+	connect(cam:GetPropertyChangedSignal("ViewportSize"), function()
+		if shown then
+			tw(scale, 0.12, { Scale = baseScale() })
+		end
+	end)
+end
+
+--// ========== Init ==========
+local saved = loadStore()
+if not saved and #store.scripts == 0 then
+	createScript("") -- hanya saat pertama kali pakai (belum ada data tersimpan)
+end
+if saved and type(saved.open) == "table" then
+	for _, id in ipairs(saved.open) do
+		if byId(id) and not table.find(openTabs, id) then
+			table.insert(openTabs, id)
+		end
+	end
+end
+if #openTabs == 0 and store.scripts[1] then
+	table.insert(openTabs, store.scripts[1].id)
+end
+local startId = (saved and byId(saved.active) and saved.active) or openTabs[1]
+if startId and not table.find(openTabs, startId) then
+	table.insert(openTabs, startId)
+end
+if startId then
+	setActive(startId)
+else
+	showEmpty()
+end
+updateGutter()
+retokenize()
+persist()
+
+tw(main, 0.2, { GroupTransparency = 0 })
+tw(scale, 0.24, { Scale = baseScale() }, Enum.EasingStyle.Back)
+
+--// Muat icon (async, UI sudah tampil duluan)
+local loaded, total, finished = 0, 0, 0
+for _ in pairs(ICONS) do
+	total += 1
+end
+for key in pairs(ICONS) do
+	task.spawn(function()
+		local id = loadIcon(key)
+		ids[key] = id or false
+		if id then
+			loaded += 1
+		end
+		for _, h in ipairs(waiting[key] or {}) do
+			applyIcon(h, id)
+		end
+		waiting[key] = nil
+		finished += 1
+		if finished == total then
+			if loaded == total then
+				log(("icon dimuat via getcustomasset (%d/%d)"):format(loaded, total), "ok")
+			else
+				log(
+					("icon dimuat %d/%d. Executor perlu writefile, getcustomasset, dan akses HTTP"):format(loaded, total),
+					"warn"
+				)
+			end
+		end
+	end)
+end
+
+log("siap. tulis script di Editor lalu tekan Execute", "info")
+if not (writefile and readfile and isfile) then
+	log("writefile/readfile tidak tersedia: Save hanya berlaku selama UI terbuka", "warn")
+end
+local hasLS = pcall(function()
+	return loadstring("return 1")()
+end)
+if not hasLS then
+	log("loadstring tidak tersedia di environment ini, jalankan lewat executor yang mendukungnya", "warn")
+end
