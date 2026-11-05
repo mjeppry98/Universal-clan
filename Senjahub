@@ -1171,10 +1171,13 @@ function Window:AddTab(o)
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
 		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
 	bind(sc, "ScrollBarImageColor3", "Track")
-	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = sc})
-	pad(sc, 14, 6, 14, 28)
+	-- UIPadding langsung di ScrollingFrame ikut memotong area gulir (bagian bawah dan atas jadi terpotong),
+	-- jadi layout + padding dipindah ke frame isi di dalamnya
+	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = sc})
+	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
+	pad(body, 14, 8, 14, 20)
 
-	local tab = newBox(self, nil, sc)
+	local tab = newBox(self, nil, body)
 	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll, tab.Btn = tab, {}, grp, {}, sc, btn
 	tab._paint = function(sel, inst)
 		local t = inst and 0 or .12
