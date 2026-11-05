@@ -1,8 +1,8 @@
--- Senja Hub 2.1 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.2 | paste & execute langsung di executor (library + contoh jadi satu)
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.1.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.2.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 local cr = cloneref or function(x) return x end
 local TweenService = cr(game:GetService("TweenService"))
@@ -344,20 +344,22 @@ local function dragger(win, frame, fn, onStart, onEnd)
 end
 
 ------------------------------------------------------------ notifikasi
--- strip datar di kanan atas: garis warna tipis di kiri, judul + isi, garis waktu tipis di bawah yang menyusut.
--- tanpa ikon, tanpa efek pudar (lebih ringan). pesan yang sama berturut-turut digabung dengan penghitung kecil.
+-- notifikasi: kartu bulat dengan ikon besar di kiri (kotak tipis bernuansa warna jenisnya) lalu judul dan isi di kanan.
+-- tanpa garis warna dan tanpa progress bar. pesan yang sama berturut-turut digabung dengan penghitung kecil.
 -- ketuk = tutup, seret ke kanan = singkirkan. waktu berhenti saat disorot atau diseret. maksimal 5.
 -- satu loop Heartbeat dipakai bersama semua notifikasi dan mati sendiri kalau tidak ada yang aktif.
 local notifHolder, notifN, notifActive, notifConn = nil, 0, {}, nil
 local KindCol = {success = C3(98, 200, 130), warn = C3(236, 184, 80), error = C3(236, 98, 104)}
-local OFF = 290
+local KindIcon = {success = "check", warn = "warn", error = "x", info = "info"}
+local KindGlyph = {success = "✓", warn = "!", error = "×", info = "i"}
+local OFF = 310
 
 local function getNotif()
 	if notifHolder and notifHolder.Parent then return notifHolder end
 	local g = new("ScreenGui", {Name = "SenjaNotif", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 1001, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(g)
-	notifHolder = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 48), Size = UDim2.new(0, 262, 1, -60), Parent = g})
-	new("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = E.SortOrder.LayoutOrder, Parent = notifHolder})
+	notifHolder = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 48), Size = UDim2.new(0, 280, 1, -60), Parent = g})
+	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = notifHolder})
 	return notifHolder
 end
 
@@ -372,7 +374,6 @@ local function notifTick(dt)
 		local e = notifActive[i]
 		if e and not e.closed then
 			if not (e.hover or e.drag) then e.left -= dt end
-			e.bar.Size = UDim2.new(math.clamp(e.left / e.dur, 0, 1), 0, 1, 0)
 			if e.left <= 0 then task.spawn(e.close) end
 		end
 	end
@@ -396,7 +397,7 @@ function Senja:Notify(o)
 		for _, e in ipairs(notifActive) do
 			if e.key == key and not e.closed then
 				e.count += 1
-				e.left, e.dur = dur, dur
+				e.left = dur
 				e.cnt.Text = "×" .. e.count
 				e.cnt.Visible = true
 				if not e.drag then
@@ -412,24 +413,35 @@ function Senja:Notify(o)
 		local wrap = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = notifN, Parent = hold})
 		local card = new("Frame", {Active = true, BackgroundColor3 = Cur.Surface, Position = UDim2.fromOffset(OFF, 0),
 			Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = wrap})
-		corner(card, 6)
+		corner(card, 14)
 		new("UIStroke", {Color = Cur.Stroke, Thickness = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = card})
+		pad(card, 12, 12, 14, 12)
 
-		corner(new("Frame", {BackgroundColor3 = col, Position = UDim2.fromOffset(7, 8), Size = UDim2.new(0, 3, 1, -16), Parent = card}), 2)
+		local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
 
-		local inner = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
-		pad(inner, 19, 10, 30, 16)
-		new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = inner})
+		-- ikon besar
+		local badge = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .86, Size = UDim2.fromOffset(40, 40), Parent = row})
+		corner(badge, 12)
+		local bs = new("UIScale", {Scale = .7, Parent = badge})
+		local src = Senja.Icon(KindIcon[kind] or "info")
+		if src ~= "" then
+			new("ImageLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+				Size = UDim2.fromOffset(22, 22), Image = src, ImageColor3 = col, Parent = badge})
+		else
+			new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = KindGlyph[kind] or "i", TextSize = 22,
+				FontFace = font(E.FontWeight.Bold), TextColor3 = col, Parent = badge})
+		end
+
+		-- teks (tinggi minimal 40 = tinggi ikon, isinya di tengah kalau cuma satu baris)
+		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(52, 0), Size = UDim2.new(1, -78, 0, 40), AutomaticSize = AY, Parent = row})
+		new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, VerticalAlignment = E.VerticalAlignment.Center, Parent = inner})
 		tlabel(inner, title, 13, Cur.Text, E.FontWeight.SemiBold, 1)
 		if body then tlabel(inner, body, 12, Cur.Sub, E.FontWeight.Medium, 2) end
 
-		local cnt = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 9), Size = UDim2.fromOffset(24, 14),
-			Text = "", TextSize = 11, FontFace = font(E.FontWeight.SemiBold), TextColor3 = Cur.Sub, TextXAlignment = E.TextXAlignment.Right, Visible = false, Parent = card})
+		local cnt = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(24, 14),
+			Text = "", TextSize = 11, FontFace = font(E.FontWeight.SemiBold), TextColor3 = Cur.Sub, TextXAlignment = E.TextXAlignment.Right, Visible = false, Parent = row})
 
-		local track = new("Frame", {BackgroundColor3 = Cur.Stroke, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 19, 1, -7), Size = UDim2.new(1, -31, 0, 2), Parent = card})
-		local bar = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .35, Size = UDim2.fromScale(1, 1), Parent = track})
-
-		local e = {key = key, card = card, cnt = cnt, bar = bar, count = 1, dur = dur, left = dur, closed = false, drag = false, hover = false}
+		local e = {key = key, card = card, cnt = cnt, count = 1, left = dur, closed = false, drag = false, hover = false}
 		notifActive[#notifActive + 1] = e
 
 		local function close()
@@ -437,18 +449,19 @@ function Senja:Notify(o)
 			e.closed = true
 			local i = table.find(notifActive, e)
 			if i then table.remove(notifActive, i) end
-			tw(card, {Position = UDim2.fromOffset(OFF, 0)}, .18)
-			task.wait(.12)
+			-- tunggu kartu benar-benar keluar layar baru ruangnya dirapatkan, supaya tidak menimpa kartu di bawahnya
+			tw(card, {Position = UDim2.fromOffset(OFF, 0)}, .18).Completed:Wait()
 			if not wrap.Parent then return end
 			wrap.AutomaticSize = E.AutomaticSize.None
 			wrap.Size = UDim2.new(1, 0, 0, wrap.AbsoluteSize.Y)
-			tw(wrap, {Size = UDim2.new(1, 0, 0, 0)}, .14)
-			task.wait(.14)
+			wrap.ClipsDescendants = true
+			tw(wrap, {Size = UDim2.new(1, 0, 0, 0)}, .14).Completed:Wait()
 			wrap:Destroy()
 		end
 		e.close = close
 
 		local inT = tw(card, {Position = UDim2.new()}, .26, Qn)
+		tw(bs, {Scale = 1}, .28, Qn)
 
 		while #notifActive > 5 do
 			local old = notifActive[1]
@@ -467,6 +480,7 @@ function Senja:Notify(o)
 			e.drag = true
 			local x0, dx, lt, vel = i.Position.X, 0, os.clock(), 0
 			ptrDrag(function(m)
+				if e.closed then return end
 				local nx, now = m.Position.X - x0, os.clock()
 				vel = vel * .6 + ((nx - dx) / math.max(now - lt, .001)) * .4
 				dx, lt = nx, now
@@ -941,8 +955,9 @@ function Box:AddSection(o)
 	local open = o.Open ~= false
 	ar.Rotation = open and 0 or -90
 	local function full() return cl.AbsoluteContentSize.Y end
+	local secTw
 	cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		if open then content.Size = UDim2.new(1, 0, 0, full()) end
+		if open and not (secTw and secTw.PlaybackState == E.PlaybackState.Playing) then content.Size = UDim2.new(1, 0, 0, full()) end
 	end)
 	local sub = newBox(self.Win, self.Tab, group)
 	sub.IsOpen, sub.Frame = open, sec
@@ -952,7 +967,13 @@ function Box:AddSection(o)
 	function sub:SetOpen(v)
 		open = v
 		self.IsOpen = v
-		tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .2)
+		if secTw then secTw:Cancel() end
+		local mine = tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .2)
+		secTw = mine
+		-- setelah selesai, pas-kan ke tinggi asli (isi bisa berubah selama animasi, mis. dropdown dibuka)
+		mine.Completed:Connect(function(st)
+			if mine == secTw and open and st == E.PlaybackState.Completed then content.Size = UDim2.new(1, 0, 0, full()) end
+		end)
 		tw(ar, {Rotation = open and 0 or -90}, .18)
 	end
 	head.MouseEnter:Connect(function() tw(hl, {TextColor3 = Cur.Text}, .08) end)
@@ -1086,7 +1107,8 @@ function Window:Select(tab)
 	end
 	tab._paint(true)
 	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(24 * dir, 0), true
-	tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
+	if tab._tw then tab._tw:Cancel() end
+	tab._tw = tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
 	self:_moveInd(old ~= nil)
 	self:_filter(self.SearchBox.Text)
 	for _, s in ipairs(tab.Secs) do s.Refresh() end
@@ -1523,7 +1545,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 2.1",
+	Subtitle = "build 2.2",
 	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
@@ -1568,5 +1590,5 @@ v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), F
 
 Win:BuildSettings()   -- tab tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk
 
-Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.1", Type = "success", Duration = 4})
+Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.2", Type = "success", Duration = 4})
 Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
