@@ -3,7 +3,7 @@ local Senja = (function()
 -- senja.lua | library UI executor Roblox
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "1.2.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "1.3.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 local cr = cloneref or function(x) return x end
 local TweenService = cr(game:GetService("TweenService"))
@@ -118,11 +118,10 @@ local function mount(g)
 	if not ok or not g.Parent then g.Parent = LP:WaitForChild("PlayerGui") end
 end
 -- posisi pointer dalam koordinat layar penuh (cocok dengan AbsolutePosition saat IgnoreGuiInset = true)
+-- InputObject.Position sudah dikurangi inset atas; AbsolutePosition tidak (IgnoreGuiInset = true), jadi inset ditambah lagi.
+-- berlaku sama untuk mouse dan sentuhan, jadi perangkat layar sentuh + mouse tidak salah baca.
 local function ptr(p)
-	if UIS.TouchEnabled and not UIS.MouseEnabled then
-		return Vector2.new(p.X, p.Y + GuiService:GetGuiInset().Y)
-	end
-	return UIS:GetMouseLocation()
+	return Vector2.new(p.X, p.Y + GuiService:GetGuiInset().Y)
 end
 
 ------------------------------------------------------------ PNG encoder (stored deflate)
@@ -328,54 +327,149 @@ local function dragger(win, frame, fn, onStart, onEnd)
 end
 
 ------------------------------------------------------------ notifikasi
-local notifHolder, notifN = nil, 0
+-- toast kecil di kanan atas. pesan yang sama berturut-turut digabung (x2, x3), timer berhenti saat disorot,
+-- bisa ditutup dengan ketuk atau diseret ke kanan. maksimal 5 sekaligus.
+local notifHolder, notifN, notifActive = nil, 0, {}
+local KindCol = {success = C3(112,196,140), warn = C3(234,186,92), error = C3(232,100,108)}
+local KindIcon = {success = "check", warn = "warn", error = "x", info = "info"}
+
 local function getNotif()
 	if notifHolder and notifHolder.Parent then return notifHolder end
 	local g = new("ScreenGui", {Name = "SenjaNotif", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 1001, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(g)
-	notifHolder = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 8), Size = UDim2.new(0, 300, 1, -16), Parent = g})
-	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, VerticalAlignment = E.VerticalAlignment.Bottom, HorizontalAlignment = E.HorizontalAlignment.Right, Parent = notifHolder})
+	notifHolder = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 46), Size = UDim2.new(0, 272, 1, -60), Parent = g})
+	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = notifHolder})
 	return notifHolder
+end
+
+local function wrapped(p, text, sz, key, w)
+	local l = label(p, text, sz, key, w)
+	l.TextWrapped, l.AutomaticSize, l.Size = true, AY, UDim2.new(1, 0, 0, 0)
+	return l
 end
 
 function Senja:Notify(o)
 	if type(o) == "string" then o = {Content = o} end
 	task.spawn(function()
 		local hold = getNotif()
-		notifN += 1
 		local kind = o.Type or "info"
-		local col = ({success = C3(104,196,134), warn = C3(232,184,90), error = C3(230,96,104)})[kind] or Cur.Accent
-		local wrap = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromOffset(284, 0), ClipsDescendants = true, LayoutOrder = notifN, Parent = hold})
-		local card = new("Frame", {Position = UDim2.fromOffset(300, 1), Size = UDim2.new(1, -2, 0, 0), AutomaticSize = AY, Parent = wrap})
-		bind(card, "BackgroundColor3", "Surface") corner(card, 5) stroke(card, "Stroke", 1, 0) pad(card, 13, 9, 11, 9)
-		new("Frame", {BackgroundColor3 = col, Position = UDim2.fromOffset(-13, -3), Size = UDim2.new(0, 2, 1, 6), Parent = card})
-		local box = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
-		new("UIListLayout", {Padding = UDim.new(0, 2), Parent = box})
-		label(box, o.Title or "Notifikasi", 13, "Text", E.FontWeight.SemiBold)
-		if o.Content then
-			local c = label(box, o.Content, 12, "Sub")
-			c.TextWrapped, c.AutomaticSize, c.Size = true, AY, UDim2.new(1, 0, 0, 0)
+		local title, body = o.Title, o.Content
+		if not title then title, body = body or "Notifikasi", nil end
+		local dur = o.Duration or 4
+		local key = kind .. "|" .. tostring(title) .. "|" .. tostring(body)
+
+		-- pesan yang sama: tambah hitungan, ulang timer, goyang sedikit
+		for _, e in ipairs(notifActive) do
+			if e.key == key and not e.closed then
+				e.count += 1
+				e.left = dur
+				e.title.Text = title .. "  x" .. e.count
+				if not e.drag then
+					e.card.Position = UDim2.fromOffset(-5, 0)
+					tw(e.card, {Position = UDim2.new()}, .2)
+				end
+				return
+			end
 		end
-		for _ = 1, 10 do
-			RunService.Heartbeat:Wait()
-			if card.AbsoluteSize.Y > 0 then break end
+
+		notifN += 1
+		local col = KindCol[kind]
+		local wrap = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = notifN, Parent = hold})
+		local card = new("CanvasGroup", {Active = true, Position = UDim2.fromOffset(300, 0), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY,
+			GroupTransparency = 1, Parent = wrap})
+		bind(card, "BackgroundColor3", "Surface") corner(card, 7) stroke(card, "Stroke", 1, 0) pad(card, 12, 10, 12, 11)
+		local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
+
+		local src = Senja.Icon(KindIcon[kind] or "info")
+		if src ~= "" then
+			local ic = new("ImageLabel", {BackgroundTransparency = 1, Size = UDim2.fromOffset(14, 14), Position = UDim2.fromOffset(0, 1), Image = src, Parent = row})
+			if col then ic.ImageColor3 = col else bind(ic, "ImageColor3", "Accent") end
+		else
+			local dot = new("Frame", {Size = UDim2.fromOffset(7, 7), Position = UDim2.fromOffset(3, 5), Parent = row})
+			corner(dot, 4)
+			if col then dot.BackgroundColor3 = col else bind(dot, "BackgroundColor3", "Accent") end
 		end
-		tw(wrap, {Size = UDim2.fromOffset(284, card.AbsoluteSize.Y + 2)}, .16)
-		tw(card, {Position = UDim2.fromOffset(1, 1)}, .26)
-		local dur, closed = o.Duration or 4, false
-		local prog = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .45, Position = UDim2.new(0, -13, 1, 7), Size = UDim2.new(1, 24, 0, 2), Parent = card})
-		TweenService:Create(prog, TweenInfo.new(dur, Lin), {Size = UDim2.new(0, 0, 0, 2)}):Play()
+		local txt = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(24, 0), Size = UDim2.new(1, -24, 0, 0), AutomaticSize = AY, Parent = row})
+		new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = txt})
+		local tl = wrapped(txt, title, 13, "Text", E.FontWeight.SemiBold)
+		tl.LayoutOrder = 1
+		if body then wrapped(txt, body, 12, "Sub").LayoutOrder = 2 end
+
+		local e = {key = key, card = card, title = tl, count = 1, left = dur, closed = false, drag = false}
+		notifActive[#notifActive + 1] = e
+		local conns = {}
+
 		local function close()
-			if closed then return end
-			closed = true
-			tw(card, {Position = UDim2.fromOffset(300, 1)}, .2)
-			task.wait(.14)
-			tw(wrap, {Size = UDim2.fromOffset(284, 0)}, .16)
+			if e.closed then return end
+			e.closed = true
+			local i = table.find(notifActive, e)
+			if i then table.remove(notifActive, i) end
+			tw(card, {Position = UDim2.fromOffset(300, 0), GroupTransparency = 1}, .2)
+			task.wait(.16)
+			if not wrap.Parent then return end
+			wrap.AutomaticSize = E.AutomaticSize.None
+			wrap.Size = UDim2.new(1, 0, 0, wrap.AbsoluteSize.Y)
+			wrap.ClipsDescendants = true
+			tw(wrap, {Size = UDim2.new(1, 0, 0, 0)}, .16)
 			task.wait(.18)
+			for _, c in ipairs(conns) do c:Disconnect() end
 			wrap:Destroy()
 		end
-		new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1, 1), Parent = card}).MouseButton1Click:Connect(close)
-		task.delay(dur, close)
+		e.close = close
+
+		local inT = tw(card, {Position = UDim2.new(), GroupTransparency = 0}, .28)
+
+		-- batas jumlah
+		while #notifActive > 5 do
+			local old = notifActive[1]
+			if old == e then break end
+			task.spawn(old.close)
+		end
+
+		-- timer, berhenti selama disorot atau diseret
+		local hover = false
+		card.MouseEnter:Connect(function() hover = true end)
+		card.MouseLeave:Connect(function() hover = false end)
+		task.spawn(function()
+			while not e.closed do
+				local dt = RunService.Heartbeat:Wait()
+				if not (hover or e.drag) then e.left -= dt end
+				if e.left <= 0 then close() break end
+			end
+		end)
+
+		-- ketuk = tutup (menjalankan Callback bila ada), seret ke kanan = singkirkan
+		local x0, dx, lt, vel = 0, 0, 0, 0
+		card.InputBegan:Connect(function(i)
+			if e.closed or e.drag then return end
+			if i.UserInputType == E.UserInputType.MouseButton1 or i.UserInputType == E.UserInputType.Touch then
+				inT:Cancel()
+				e.drag, x0, dx, lt, vel = true, i.Position.X, 0, os.clock(), 0
+			end
+		end)
+		conns[#conns + 1] = UIS.InputChanged:Connect(function(i)
+			if not e.drag then return end
+			if i.UserInputType ~= E.UserInputType.MouseMovement and i.UserInputType ~= E.UserInputType.Touch then return end
+			local nx, now = i.Position.X - x0, os.clock()
+			vel = vel * .6 + ((nx - dx) / math.max(now - lt, .001)) * .4
+			dx, lt = nx, now
+			local px = dx > 0 and dx or dx * .25
+			card.Position = UDim2.fromOffset(px, 0)
+			card.GroupTransparency = math.clamp(px / 280, 0, .7)
+		end)
+		conns[#conns + 1] = UIS.InputEnded:Connect(function(i)
+			if not e.drag then return end
+			if i.UserInputType ~= E.UserInputType.MouseButton1 and i.UserInputType ~= E.UserInputType.Touch then return end
+			e.drag = false
+			if math.abs(dx) < 5 then
+				if o.Callback then safe(o.Callback) end
+				task.spawn(close)
+			elseif dx > 80 or vel > 700 then
+				task.spawn(close)
+			else
+				tw(card, {Position = UDim2.new(), GroupTransparency = 0}, .2)
+			end
+		end)
 	end)
 end
 
@@ -386,6 +480,11 @@ local Box = {}
 Box.__index = Box
 local function newBox(win, tab, body, grouped) return setmetatable({Win = win, Tab = tab, Body = body, Grouped = grouped, _cnt = 0}, Box) end
 function Box:_n() self._cnt += 1 return self._cnt end
+-- matikan scroll halaman selama slider / color picker digeser (kalau tidak, halaman ikut tergulir di layar sentuh)
+function Box:_lock(on)
+	local s = self.Tab and self.Tab.Scroll
+	if s then s.ScrollingEnabled = not on end
+end
 local function reg(o, obj) if o.Flag then Senja.Flags[o.Flag] = obj end return obj end
 
 function Box:_row(o, cw, wantHit)
@@ -431,7 +530,7 @@ function Box:_row(o, cw, wantHit)
 		hit.MouseButton1Down:Connect(function() press(true) end)
 		hit.MouseButton1Up:Connect(function() press(false) end)
 	end
-	table.insert(self.Tab.Items, {holder = h, title = o.Title or ""})
+	table.insert(self.Tab.Items, {holder = h, title = o.Title or "", box = self})
 	return {h = h, row = row, box = box, col = col, hit = hit, title = t, desc = d}
 end
 
@@ -530,7 +629,7 @@ function Box:AddSlider(o)
 	function obj:Serialize() return self.Value end
 	dragger(self.Win, barh, function(p)
 		obj:Set(mn + (mx - mn) * math.clamp((p.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1))
-	end, function() showBub(true) end, function() showBub(false) end)
+	end, function() showBub(true) self:_lock(true) end, function() showBub(false) self:_lock(false) end)
 	vb.FocusLost:Connect(function() obj:Set(tonumber(vb.Text:match("-?[%d%.]+")) or obj.Value) end)
 	obj:Set(o.Default or mn, true)
 	return reg(o, obj)
@@ -745,12 +844,12 @@ function Box:AddColorPicker(o)
 		S = math.clamp((m.X - sv.AbsolutePosition.X) / sv.AbsoluteSize.X, 0, 1)
 		V = 1 - math.clamp((m.Y - sv.AbsolutePosition.Y) / sv.AbsoluteSize.Y, 0, 1)
 		upd()
-	end)
+	end, function() self:_lock(true) end, function() self:_lock(false) end)
 	dragger(self.Win, hue, function(p)
 		local m = ptr(p)
 		H = math.clamp((m.Y - hue.AbsolutePosition.Y) / hue.AbsoluteSize.Y, 0, 1)
 		upd()
-	end)
+	end, function() self:_lock(true) end, function() self:_lock(false) end)
 	local open = false
 	sw.MouseButton1Click:Connect(function()
 		open = not open
@@ -833,8 +932,13 @@ function Box:AddSection(o)
 		if open then content.Size = UDim2.new(1, 0, 0, full()) end
 	end)
 	local sub = newBox(self.Win, self.Tab, group, true)
+	sub.IsOpen, sub.Frame = open, sec
+	table.insert(self.Tab.Secs, sub)
+	-- ukuran dihitung ulang saat tab ditampilkan (layout di tab tersembunyi bisa belum terhitung)
+	sub.Refresh = function() if open then content.Size = UDim2.new(1, 0, 0, full()) end end
 	function sub:SetOpen(v)
 		open = v
+		self.IsOpen = v
 		tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .24)
 		tw(ar, {Rotation = open and 0 or -90}, .2)
 	end
@@ -993,13 +1097,25 @@ function Window:Select(tab)
 	tab.Group.Position, tab.Group.GroupTransparency, tab.Group.Visible = UDim2.fromOffset(0, 12), 1, true
 	tw(tab.Group, {GroupTransparency = 0, Position = UDim2.new()}, .22)
 	self:_filter(self.SearchBox.Text)
+	for _, s in ipairs(tab.Secs) do s.Refresh() end
+	task.defer(function() for _, s in ipairs(tab.Secs) do s.Refresh() end end)
 end
 
+-- saring baris berdasarkan kata kunci. section tanpa hasil disembunyikan,
+-- section tertutup yang punya hasil dibuka otomatis.
 function Window:_filter(q)
 	q = q:lower()
-	if not self.Current then return end
-	for _, it in ipairs(self.Current.Items) do
-		it.holder.Visible = q == "" or it.title:lower():find(q, 1, true) ~= nil
+	local tab = self.Current
+	if not tab then return end
+	local hit = {}
+	for _, it in ipairs(tab.Items) do
+		local ok = q == "" or it.title:lower():find(q, 1, true) ~= nil
+		it.holder.Visible = ok
+		if ok then hit[it.box] = true end
+	end
+	for _, s in ipairs(tab.Secs) do
+		s.Frame.Visible = q == "" or hit[s] == true
+		if q ~= "" and hit[s] and not s.IsOpen then s:SetOpen(true) end
 	end
 end
 
@@ -1023,7 +1139,7 @@ function Window:AddTab(o)
 	pad(sc, 12, 12, 12, 30)
 
 	local tab = newBox(self, nil, sc, false)
-	tab.Tab, tab.Items, tab.Group = tab, {}, grp
+	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll = tab, {}, grp, {}, sc
 	local win = self
 	tab._paint = function(sel, inst)
 		local t = inst and 0 or .14
@@ -1273,17 +1389,35 @@ function Senja:CreateWindow(o)
 	bind(side, "BackgroundColor3", "Side")
 	local sline = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 1, 1, 0), Parent = side})
 	bind(sline, "BackgroundColor3", "Stroke")
-	local tabs = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 1, -42),
+	local FOOT = 54
+	local tabs = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 1, -(FOOT + 14)),
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = AY, ScrollBarThickness = 0, Parent = side})
 	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = tabs})
 	pad(tabs, 8, 0, 8, 0)
 	win.TabList = tabs
 
-	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -32), Size = UDim2.new(1, 0, 0, 32), Parent = side})
+	-- profil pemain di bawah sidebar
+	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = side})
 	local fline = new("Frame", {Size = UDim2.new(1, 0, 0, 1), Parent = foot})
 	bind(fline, "BackgroundColor3", "Stroke")
-	local fn = label(foot, "@" .. LP.Name, 11, "Sub")
-	fn.Position, fn.Size, fn.TextTruncate = UDim2.fromOffset(14, 1), UDim2.new(1, -24, 1, -1), E.TextTruncate.AtEnd
+	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 12, .5, 1), Size = UDim2.fromOffset(32, 32),
+		Image = "rbxthumb://type=AvatarHeadShot&id=" .. LP.UserId .. "&w=150&h=150", Parent = foot})
+	bind(av, "BackgroundColor3", "Hover") corner(av, 16) stroke(av, "Stroke", 1, 0)
+	local dn = label(foot, LP.DisplayName, 12, "Text", E.FontWeight.SemiBold)
+	dn.Position, dn.Size, dn.TextTruncate = UDim2.fromOffset(52, 13), UDim2.new(1, -60, 0, 15), E.TextTruncate.AtEnd
+	local un = label(foot, "@" .. LP.Name, 10, "Sub")
+	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(52, 29), UDim2.new(1, -60, 0, 12), E.TextTruncate.AtEnd
+	-- kalau rbxthumb tidak termuat, coba lewat GetUserThumbnailAsync
+	task.spawn(function()
+		local t0 = os.clock()
+		while av.Parent and not av.IsLoaded and os.clock() - t0 < 4 do task.wait(.25) end
+		if av.Parent and not av.IsLoaded then
+			local ok, url = pcall(function()
+				return Players:GetUserThumbnailAsync(LP.UserId, E.ThumbnailType.HeadShot, E.ThumbnailSize.Size100x100)
+			end)
+			if ok and url then av.Image = url end
+		end
+	end)
 
 	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.new(0, 132, 0, 38), Size = UDim2.new(1, -132, 1, -38), Parent = main})
 
@@ -1378,7 +1512,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 1.2",
+	Subtitle = "build 1.3",
 	Theme = "Senja",            -- Senja | Malam | Rimba | Samudra | Anggur | Mawar | Kapur | Pagi
 	ToggleKey = Enum.KeyCode.RightShift,
 })
