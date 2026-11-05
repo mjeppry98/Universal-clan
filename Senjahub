@@ -1,9 +1,8 @@
--- Senja Hub | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.0 | paste & execute langsung di executor (library + contoh jadi satu)
 local Senja = (function()
--- senja.lua | library UI executor Roblox
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "1.3.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.0.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 local cr = cloneref or function(x) return x end
 local TweenService = cr(game:GetService("TweenService"))
@@ -16,25 +15,29 @@ local CoreGui      = cr(game:GetService("CoreGui"))
 local LP = Players.LocalPlayer
 
 local E = Enum
-local Q, Qn, Lin, Sine = E.EasingStyle.Quart, E.EasingStyle.Quint, E.EasingStyle.Linear, E.EasingStyle.Sine
+local Q, Qn, Lin, Sine, Bk = E.EasingStyle.Quart, E.EasingStyle.Quint, E.EasingStyle.Linear, E.EasingStyle.Sine, E.EasingStyle.Back
 local OUT, IN = E.EasingDirection.Out, E.EasingDirection.In
 local AY, AX = E.AutomaticSize.Y, E.AutomaticSize.X
 local C3 = Color3.fromRGB
 local WHITE, BLACK = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
 
------------------------------------------------------------- tema
+------------------------------------------------------------ tema (semuanya berlatar hitam, beda di warna aksen)
+local function mk(acc, on)
+	return {Bg = C3(0, 0, 0), Side = C3(13, 13, 13), Surface = C3(17, 17, 17), Hover = C3(28, 28, 28), Track = C3(48, 48, 48),
+		Stroke = C3(30, 30, 30), Text = C3(242, 242, 242), Sub = C3(128, 128, 128), Accent = acc, OnAccent = on or C3(0, 0, 0)}
+end
 local Themes = {
-	Senja   = {Bg=C3(19,18,20),   Side=C3(23,22,25),   Surface=C3(29,28,32),   Hover=C3(38,36,41),   Track=C3(55,52,59),   Stroke=C3(46,44,50),   Text=C3(236,232,226), Sub=C3(143,138,146), Accent=C3(232,152,84),  OnAccent=C3(28,16,6)},
-	Malam   = {Bg=C3(13,16,22),   Side=C3(16,20,28),   Surface=C3(22,27,37),   Hover=C3(30,36,49),   Track=C3(48,57,74),   Stroke=C3(37,44,58),   Text=C3(225,230,240), Sub=C3(125,136,155), Accent=C3(92,156,236),  OnAccent=C3(6,14,28)},
-	Rimba   = {Bg=C3(14,18,16),   Side=C3(17,22,19),   Surface=C3(23,30,26),   Hover=C3(31,40,35),   Track=C3(49,61,54),   Stroke=C3(38,48,42),   Text=C3(226,234,228), Sub=C3(130,147,137), Accent=C3(108,196,136), OnAccent=C3(6,22,12)},
-	Samudra = {Bg=C3(12,18,20),   Side=C3(15,23,26),   Surface=C3(21,31,35),   Hover=C3(29,42,47),   Track=C3(45,63,70),   Stroke=C3(35,49,55),   Text=C3(224,238,240), Sub=C3(122,148,154), Accent=C3(64,200,196),  OnAccent=C3(4,24,24)},
-	Anggur  = {Bg=C3(18,15,24),   Side=C3(22,18,30),   Surface=C3(29,24,39),   Hover=C3(38,32,52),   Track=C3(58,50,78),   Stroke=C3(45,38,60),   Text=C3(234,228,244), Sub=C3(140,130,162), Accent=C3(168,132,244), OnAccent=C3(18,8,38)},
-	Mawar   = {Bg=C3(21,15,18),   Side=C3(26,18,22),   Surface=C3(33,24,28),   Hover=C3(43,31,36),   Track=C3(66,48,54),   Stroke=C3(52,38,44),   Text=C3(240,230,234), Sub=C3(160,134,143), Accent=C3(238,110,146), OnAccent=C3(34,6,16)},
-	Kapur   = {Bg=C3(16,16,17),   Side=C3(20,20,21),   Surface=C3(26,26,28),   Hover=C3(35,35,38),   Track=C3(56,56,60),   Stroke=C3(44,44,48),   Text=C3(238,238,238), Sub=C3(138,138,142), Accent=C3(230,230,232), OnAccent=C3(14,14,16)},
-	Pagi    = {Bg=C3(245,243,239), Side=C3(237,234,229), Surface=C3(255,255,254), Hover=C3(234,231,225), Track=C3(203,199,192), Stroke=C3(221,217,210), Text=C3(36,33,30),    Sub=C3(118,113,106), Accent=C3(208,98,48),   OnAccent=C3(255,255,255)},
+	Hitam  = mk(C3(240, 240, 240)),
+	Jingga = mk(C3(255, 138, 61)),
+	Biru   = mk(C3(76, 148, 255)),
+	Hijau  = mk(C3(72, 214, 128)),
+	Ungu   = mk(C3(164, 124, 255)),
+	Merah  = mk(C3(255, 84, 92), C3(20, 0, 2)),
+	Mawar  = mk(C3(255, 104, 164)),
+	Aqua   = mk(C3(52, 214, 206)),
 }
-local Order = {"Senja", "Malam", "Rimba", "Samudra", "Anggur", "Mawar", "Kapur", "Pagi"}
-local CurName, Cur = "Senja", Themes.Senja
+local Order = {"Hitam", "Jingga", "Biru", "Hijau", "Ungu", "Merah", "Mawar", "Aqua"}
+local CurName, Cur = "Hitam", Themes.Hitam
 local Reg, Hooks = {}, {}
 
 -- semua animasi lewat sini; Senja.Speed < 1 = lebih cepat
@@ -77,7 +80,7 @@ function Senja:SetAccent(c)
 	local t = {}
 	for k, v in pairs(Themes[CurName]) do t[k] = v end
 	t.Accent = c
-	t.OnAccent = lum(c) > .6 and C3(20, 18, 16) or WHITE
+	t.OnAccent = lum(c) > .55 and C3(0, 0, 0) or WHITE
 	AccentOverride = c
 	applyTheme(t, CurName)
 end
@@ -377,7 +380,7 @@ function Senja:Notify(o)
 		local wrap = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = notifN, Parent = hold})
 		local card = new("CanvasGroup", {Active = true, Position = UDim2.fromOffset(300, 0), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY,
 			GroupTransparency = 1, Parent = wrap})
-		bind(card, "BackgroundColor3", "Surface") corner(card, 7) stroke(card, "Stroke", 1, 0) pad(card, 12, 10, 12, 11)
+		bind(card, "BackgroundColor3", "Surface") corner(card, 14) stroke(card, "Stroke", 1, 0) pad(card, 15, 12, 15, 13)
 		local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
 
 		local src = Senja.Icon(KindIcon[kind] or "info")
@@ -474,11 +477,11 @@ function Senja:Notify(o)
 end
 
 ------------------------------------------------------------ container elemen
--- elemen di dalam section ditumpuk dalam satu grup berbingkai, dipisah garis tipis.
--- elemen yang langsung di tab (tanpa section) tampil sebagai baris berbingkai sendiri.
+-- setiap elemen berupa kartu bulat sendiri (tanpa garis tepi), jarak antar kartu kecil.
+-- section hanya judul kecil yang bisa dilipat; kartu di dalamnya ikut terlipat.
 local Box = {}
 Box.__index = Box
-local function newBox(win, tab, body, grouped) return setmetatable({Win = win, Tab = tab, Body = body, Grouped = grouped, _cnt = 0}, Box) end
+local function newBox(win, tab, body) return setmetatable({Win = win, Tab = tab, Body = body, _cnt = 0}, Box) end
 function Box:_n() self._cnt += 1 return self._cnt end
 -- matikan scroll halaman selama slider / color picker digeser (kalau tidak, halaman ikut tergulir di layar sentuh)
 function Box:_lock(on)
@@ -490,28 +493,12 @@ local function reg(o, obj) if o.Flag then Senja.Flags[o.Flag] = obj end return o
 function Box:_row(o, cw, wantHit)
 	local n = self:_n()
 	local h = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = n, Parent = self.Body})
-	pad(h, 11, 9, 11, 9)
-	corner(h, 4)
-	local function hov(on)
-		if self.Grouped then tw(h, {BackgroundTransparency = on and 0 or 1, BackgroundColor3 = Cur.Hover}, .1)
-		else tw(h, {BackgroundColor3 = on and Cur.Hover or Cur.Surface}, .1) end
-	end
-	local function press(on) tw(h, {BackgroundColor3 = on and Cur.Track or Cur.Hover}, .06) end
-	if self.Grouped then
-		bind(h, "BackgroundColor3", "Hover")
-		h.BackgroundTransparency = 1
-		if n > 1 then
-			local d = new("Frame", {Position = UDim2.fromOffset(-11, -9), Size = UDim2.new(1, 22, 0, 1), Parent = h})
-			bind(d, "BackgroundColor3", "Stroke")
-		end
-	else
-		bind(h, "BackgroundColor3", "Surface")
-		stroke(h, "Stroke", 1, 0)
-	end
+	bind(h, "BackgroundColor3", "Surface") corner(h, 14) pad(h, 15, 12, 15, 12)
+	local us = new("UIScale", {Parent = h})
 	local col = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = h})
 	new("UIListLayout", {SortOrder = E.SortOrder.LayoutOrder, Parent = col})
 	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = 1, Parent = col})
-	local box = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -(cw or 0) - 10, 0, 0), AutomaticSize = AY, Parent = row})
+	local box = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, -(cw or 0) - 12, 0, 0), AutomaticSize = AY, Parent = row})
 	new("UIListLayout", {Padding = UDim.new(0, 2), Parent = box})
 	local t = label(box, o.Title or "", 13, "Text")
 	local d
@@ -521,17 +508,17 @@ function Box:_row(o, cw, wantHit)
 	end
 	local hit
 	if wantHit then
-		local bar = new("Frame", {Position = UDim2.fromOffset(-11, -5), Size = UDim2.new(0, 2, 1, 10), ZIndex = 4, Parent = h})
-		bind(bar, "BackgroundColor3", "Accent")
-		bar.BackgroundTransparency = 1
-		hit = new("TextButton", {BackgroundTransparency = 1, Text = "", Position = UDim2.fromOffset(-11, -9), Size = UDim2.new(1, 22, 1, 18), ZIndex = 5, Parent = h})
-		hit.MouseEnter:Connect(function() hov(true) tw(bar, {BackgroundTransparency = 0}, .12) end)
-		hit.MouseLeave:Connect(function() hov(false) tw(bar, {BackgroundTransparency = 1}, .15) end)
-		hit.MouseButton1Down:Connect(function() press(true) end)
-		hit.MouseButton1Up:Connect(function() press(false) end)
+		hit = new("TextButton", {BackgroundTransparency = 1, Text = "", Position = UDim2.fromOffset(-15, -12), Size = UDim2.new(1, 30, 1, 24), ZIndex = 5, Parent = h})
+		hit.MouseEnter:Connect(function() tw(h, {BackgroundColor3 = Cur.Hover}, .12) end)
+		hit.MouseLeave:Connect(function()
+			tw(h, {BackgroundColor3 = Cur.Surface}, .16)
+			tw(us, {Scale = 1}, .18)
+		end)
+		hit.MouseButton1Down:Connect(function() tw(us, {Scale = .975}, .08) end)
+		hit.MouseButton1Up:Connect(function() tw(us, {Scale = 1}, .22, Bk) end)
 	end
 	table.insert(self.Tab.Items, {holder = h, title = o.Title or "", box = self})
-	return {h = h, row = row, box = box, col = col, hit = hit, title = t, desc = d}
+	return {h = h, row = row, box = box, col = col, hit = hit, title = t, desc = d, us = us}
 end
 
 function Box:AddLabel(o)
@@ -545,36 +532,49 @@ end
 Box.AddParagraph = Box.AddLabel
 
 function Box:AddDivider()
-	local d = new("Frame", {Size = UDim2.new(1, 0, 0, 1), LayoutOrder = self:_n(), Parent = self.Body})
+	local d = new("Frame", {Size = UDim2.new(1, -8, 0, 1), LayoutOrder = self:_n(), Parent = self.Body})
 	bind(d, "BackgroundColor3", "Stroke")
 end
 
 function Box:AddButton(o)
-	local c = self:_row(o, 20, true)
-	local ic = img(c.row, o.Icon or "play", 12, "Sub")
-	ic.AnchorPoint, ic.Position = Vector2.new(1, .5), UDim2.new(1, 0, .5, 0)
-	c.hit.MouseEnter:Connect(function() tw(ic, {ImageColor3 = Cur.Accent}, .1) end)
-	c.hit.MouseLeave:Connect(function() tw(ic, {ImageColor3 = Cur.Sub, Size = UDim2.fromOffset(12, 12)}, .12) end)
-	c.hit.MouseButton1Down:Connect(function() tw(ic, {Size = UDim2.fromOffset(9, 9)}, .06) end)
-	c.hit.MouseButton1Up:Connect(function() tw(ic, {Size = UDim2.fromOffset(12, 12)}, .12) end)
+	local c = self:_row(o, 30, true)
+	local pill = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = c.row})
+	bind(pill, "BackgroundColor3", "Hover") corner(pill, 13)
+	local ic = img(pill, o.Icon or "play", 12, "Sub")
+	ic.AnchorPoint, ic.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
+	c.hit.MouseEnter:Connect(function()
+		tw(pill, {BackgroundColor3 = Cur.Accent}, .12)
+		tw(ic, {ImageColor3 = Cur.OnAccent}, .12)
+	end)
+	c.hit.MouseLeave:Connect(function()
+		tw(pill, {BackgroundColor3 = Cur.Hover}, .16)
+		tw(ic, {ImageColor3 = Cur.Sub}, .16)
+	end)
 	local obj = {}
-	function obj:Fire() safe(o.Callback) end
+	function obj:Fire()
+		pill.Size = UDim2.fromOffset(20, 20)
+		tw(pill, {Size = UDim2.fromOffset(26, 26)}, .28, Bk)
+		safe(o.Callback)
+	end
 	function obj:SetTitle(t) c.title.Text = t end
 	c.hit.MouseButton1Click:Connect(function() obj:Fire() end)
 	return obj
 end
 
 function Box:AddToggle(o)
-	local c = self:_row(o, 40, true)
+	local c = self:_row(o, 46, true)
 	local obj = {Type = "Toggle", Value = false}
-	local track = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(30, 16), Parent = c.row})
-	bind(track, "BackgroundColor3", "Track") corner(track, 3)
-	local knob = new("Frame", {BackgroundColor3 = WHITE, Position = UDim2.fromOffset(3, 3), Size = UDim2.fromOffset(10, 10), Parent = track})
-	corner(knob, 2)
+	local pressed = false
+	local track = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(40, 22), Parent = c.row})
+	bind(track, "BackgroundColor3", "Track") corner(track, 11)
+	local knob = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 3, .5, 0), Size = UDim2.fromOffset(16, 16), Parent = track})
+	bind(knob, "BackgroundColor3", "Sub") corner(knob, 8)
 	local function paint(inst)
-		local t = inst and 0 or .14
-		tw(track, {BackgroundColor3 = obj.Value and Cur.Accent or Cur.Track}, t)
-		tw(knob, {Position = UDim2.fromOffset(obj.Value and 17 or 3, 3)}, t)
+		local t = inst and 0 or .22
+		local w = pressed and 21 or 16
+		tw(track, {BackgroundColor3 = obj.Value and Cur.Accent or Cur.Track}, inst and 0 or .18)
+		tw(knob, {Size = UDim2.fromOffset(w, 16), Position = UDim2.new(0, obj.Value and (37 - w) or 3, .5, 0),
+			BackgroundColor3 = obj.Value and Cur.OnAccent or Cur.Sub}, t, Bk)
 	end
 	function obj:Set(v, silent)
 		self.Value = v and true or false
@@ -583,6 +583,9 @@ function Box:AddToggle(o)
 	end
 	function obj:Get() return self.Value end
 	function obj:Serialize() return self.Value end
+	c.hit.MouseButton1Down:Connect(function() pressed = true paint() end)
+	c.hit.MouseButton1Up:Connect(function() pressed = false paint() end)
+	c.hit.MouseLeave:Connect(function() if pressed then pressed = false paint() end end)
 	c.hit.MouseButton1Click:Connect(function() obj:Set(not obj.Value) end)
 	Hooks[#Hooks + 1] = function() paint() end
 	obj.Value = o.Default and true or false
@@ -592,28 +595,28 @@ function Box:AddToggle(o)
 end
 
 function Box:AddSlider(o)
-	local c = self:_row(o, 62)
+	local c = self:_row(o, 64)
 	local mn, mx, inc = o.Min or 0, o.Max or 100, o.Increment or 1
 	local obj = {Type = "Slider", Value = mn}
-	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(54, 20), Text = "",
+	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(58, 24), Text = "",
 		ClearTextOnFocus = false, TextSize = 12, FontFace = font(E.FontWeight.SemiBold), Parent = c.row})
-	bind(vb, "BackgroundColor3", "Bg") bind(vb, "TextColor3", "Accent") corner(vb, 3)
-	local barh = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 2, Active = true, Parent = c.col})
-	local track = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 4), Parent = barh})
-	bind(track, "BackgroundColor3", "Track") corner(track, 2)
+	bind(vb, "BackgroundColor3", "Bg") bind(vb, "TextColor3", "Text") corner(vb, 12)
+	local barh = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 2, Active = true, Parent = c.col})
+	local track = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, 0, 17), Size = UDim2.new(1, 0, 0, 6), Parent = barh})
+	bind(track, "BackgroundColor3", "Track") corner(track, 3)
 	local fill = new("Frame", {Size = UDim2.fromScale(0, 1), Parent = track})
-	bind(fill, "BackgroundColor3", "Accent") corner(fill, 2)
-	local mark = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(1, .5), Size = UDim2.fromOffset(3, 12), Parent = fill})
-	bind(mark, "BackgroundColor3", "Text") corner(mark, 1)
-	local bub = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(0, 0, 0, 9), Size = UDim2.fromOffset(46, 18), Parent = barh})
-	bind(bub, "BackgroundColor3", "Accent") corner(bub, 3)
+	bind(fill, "BackgroundColor3", "Accent") corner(fill, 3)
+	local knob = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(1, .5), Size = UDim2.fromOffset(14, 14), Parent = fill})
+	bind(knob, "BackgroundColor3", "Text") corner(knob, 7)
+	local bub = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(0, 0, 0, 7), Size = UDim2.fromOffset(48, 20), Parent = barh})
+	bind(bub, "BackgroundColor3", "Accent") corner(bub, 10)
 	bub.BackgroundTransparency = 1
 	local bl = label(bub, "", 11, "OnAccent", E.FontWeight.SemiBold)
 	bl.Size, bl.TextXAlignment, bl.TextTransparency = UDim2.fromScale(1, 1), E.TextXAlignment.Center, 1
 	local function showBub(on)
 		tw(bub, {BackgroundTransparency = on and 0 or 1}, .1)
 		tw(bl, {TextTransparency = on and 0 or 1}, .1)
-		tw(mark, {Size = UDim2.fromOffset(on and 5 or 3, on and 16 or 12)}, .1)
+		tw(knob, {Size = UDim2.fromOffset(on and 20 or 14, on and 20 or 14)}, .18, Bk)
 	end
 	function obj:Set(v, silent)
 		v = math.clamp(math.floor(((tonumber(v) or mn) - mn) / inc + .5) * inc + mn, mn, mx)
@@ -622,7 +625,7 @@ function Box:AddSlider(o)
 		tw(fill, {Size = UDim2.fromScale(r, 1)}, .08)
 		local txt = tostring(math.floor(v * 100 + .5) / 100) .. (o.Suffix or "")
 		vb.Text, bl.Text = txt, txt
-		tw(bub, {Position = UDim2.new(math.clamp(r, .08, .92), 0, 0, 9)}, .08)
+		tw(bub, {Position = UDim2.new(math.clamp(r, .1, .9), 0, 0, 7)}, .08)
 		if not silent then safe(o.Callback, v) end
 	end
 	function obj:Get() return self.Value end
@@ -636,17 +639,17 @@ function Box:AddSlider(o)
 end
 
 function Box:AddInput(o)
-	local c = self:_row(o, 150)
+	local c = self:_row(o, 156)
 	local obj = {Type = "Input", Value = o.Default or ""}
-	local f = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(140, 22), Parent = c.row})
-	bind(f, "BackgroundColor3", "Bg") corner(f, 3)
+	local f = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(146, 28), Parent = c.row})
+	bind(f, "BackgroundColor3", "Bg") corner(f, 14)
 	local st = stroke(f, "Stroke", 1, 0)
-	local tb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 1, 0), Text = obj.Value,
+	local tb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = obj.Value,
 		PlaceholderText = o.Placeholder or "ketik di sini", ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = f})
 	bind(tb, "TextColor3", "Text") bind(tb, "PlaceholderColor3", "Sub")
-	tb.Focused:Connect(function() tw(st, {Color = Cur.Accent}, .1) end)
+	tb.Focused:Connect(function() tw(st, {Color = Cur.Accent}, .12) end)
 	tb.FocusLost:Connect(function(enter)
-		tw(st, {Color = Cur.Stroke}, .15)
+		tw(st, {Color = Cur.Stroke}, .16)
 		obj.Value = tb.Text
 		safe(o.Callback, tb.Text, enter)
 	end)
@@ -658,24 +661,24 @@ function Box:AddInput(o)
 end
 
 function Box:AddDropdown(o)
-	local c = self:_row(o, 140)
+	local c = self:_row(o, 146)
 	local multi = o.Multi
 	local obj = {Type = "Dropdown", Values = o.Values or {}, Value = multi and {} or nil, Open = false}
-	local disp = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(130, 22), Parent = c.row})
-	bind(disp, "BackgroundColor3", "Bg") corner(disp, 3)
+	local disp = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(136, 28), Parent = c.row})
+	bind(disp, "BackgroundColor3", "Bg") corner(disp, 14)
 	local dst = stroke(disp, "Stroke", 1, 0)
 	local dl = label(disp, "", 12, "Text")
-	dl.Position, dl.Size, dl.TextTruncate = UDim2.fromOffset(8, 0), UDim2.new(1, -26, 1, 0), E.TextTruncate.AtEnd
+	dl.Position, dl.Size, dl.TextTruncate = UDim2.fromOffset(12, 0), UDim2.new(1, -32, 1, 0), E.TextTruncate.AtEnd
 	local arrow = img(disp, "chevron", 11, "Sub")
-	arrow.AnchorPoint, arrow.Position = Vector2.new(1, .5), UDim2.new(1, -7, .5, 0)
+	arrow.AnchorPoint, arrow.Position = Vector2.new(1, .5), UDim2.new(1, -10, .5, 0)
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = c.col})
-	pad(body, 0, 8, 0, 0)
+	pad(body, 0, 10, 0, 0)
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
 	local sb
 	if o.Search then
-		local sf = new("Frame", {Size = UDim2.new(1, 0, 0, 24), LayoutOrder = 1, Parent = body})
-		bind(sf, "BackgroundColor3", "Bg") corner(sf, 3)
-		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 1, 0), Text = "", PlaceholderText = "cari...",
+		local sf = new("Frame", {Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 1, Parent = body})
+		bind(sf, "BackgroundColor3", "Bg") corner(sf, 14)
+		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = "", PlaceholderText = "cari...",
 			ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = sf})
 		bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
 	end
@@ -683,7 +686,7 @@ function Box:AddDropdown(o)
 		AutomaticCanvasSize = AY, CanvasSize = UDim2.new(), Parent = body})
 	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = list})
 	local opts = {}
-	local function target() return 8 + (sb and 30 or 0) + list.Size.Y.Offset end
+	local function target() return 10 + (sb and 34 or 0) + list.Size.Y.Offset end
 	local function isSel(v) if multi then return table.find(obj.Value, v) ~= nil end return obj.Value == v end
 	local function paint()
 		for v, b in pairs(opts) do
@@ -699,25 +702,25 @@ function Box:AddDropdown(o)
 		opts = {}
 		for i, v in ipairs(obj.Values) do
 			v = tostring(v)
-			local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 24), LayoutOrder = i, Parent = list})
-			bind(b, "BackgroundColor3", "Hover") corner(b, 3)
+			local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 28), LayoutOrder = i, Parent = list})
+			bind(b, "BackgroundColor3", "Hover") corner(b, 10)
 			local l = label(b, v, 12, "Text")
-			l.Position, l.Size = UDim2.fromOffset(8, 0), UDim2.new(1, -30, 1, 0)
+			l.Position, l.Size = UDim2.fromOffset(12, 0), UDim2.new(1, -36, 1, 0)
 			local ck = img(b, "check", 11, "Accent")
-			ck.AnchorPoint, ck.Position, ck.ImageTransparency = Vector2.new(1, .5), UDim2.new(1, -7, .5, 0), 1
+			ck.AnchorPoint, ck.Position, ck.ImageTransparency = Vector2.new(1, .5), UDim2.new(1, -10, .5, 0), 1
 			b.MouseEnter:Connect(function() tw(b, {BackgroundTransparency = 0}, .08) end)
-			b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 1}, .12) end)
+			b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 1}, .14) end)
 			b.MouseButton1Click:Connect(function() obj:_pick(v) end)
 			opts[v] = {btn = b, lbl = l, chk = ck}
 		end
-		list.Size = UDim2.new(1, 0, 0, math.min(#obj.Values * 26, 130))
+		list.Size = UDim2.new(1, 0, 0, math.min(#obj.Values * 30, 138))
 		paint()
 		if obj.Open then tw(body, {Size = UDim2.new(1, 0, 0, target())}, .2) end
 	end
 	local function setOpen(v)
 		obj.Open = v
-		tw(body, {Size = UDim2.new(1, 0, 0, v and target() or 0)}, .24)
-		tw(arrow, {Rotation = v and 180 or 0}, .2)
+		tw(body, {Size = UDim2.new(1, 0, 0, v and target() or 0)}, .26)
+		tw(arrow, {Rotation = v and 180 or 0}, .22, Bk)
 		tw(dst, {Color = v and Cur.Accent or Cur.Stroke}, .12)
 	end
 	disp.MouseButton1Click:Connect(function() setOpen(not obj.Open) end)
@@ -759,11 +762,11 @@ function Box:AddDropdown(o)
 end
 
 function Box:AddKeybind(o)
-	local c = self:_row(o, 80)
+	local c = self:_row(o, 86)
 	local mode = o.Mode or "Press"
 	local obj = {Type = "Keybind", Key = o.Default or E.KeyCode.Unknown, State = false}
-	local btn = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(70, 22), Parent = c.row})
-	bind(btn, "BackgroundColor3", "Bg") corner(btn, 3)
+	local btn = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(76, 28), Parent = c.row})
+	bind(btn, "BackgroundColor3", "Bg") corner(btn, 14)
 	local st = stroke(btn, "Stroke", 1, 0)
 	local kl = label(btn, "", 12, "Text")
 	kl.Size, kl.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
@@ -787,7 +790,7 @@ function Box:AddKeybind(o)
 			if i.UserInputType ~= E.UserInputType.Keyboard then return end
 			cn:Disconnect()
 			listening = false
-			tw(st, {Color = Cur.Stroke}, .15)
+			tw(st, {Color = Cur.Stroke}, .16)
 			obj:Set(i.KeyCode == E.KeyCode.Escape and E.KeyCode.Unknown or i.KeyCode)
 		end)
 	end)
@@ -805,30 +808,30 @@ function Box:AddKeybind(o)
 end
 
 function Box:AddColorPicker(o)
-	local c = self:_row(o, 106)
+	local c = self:_row(o, 112)
 	local obj = {Type = "Color"}
 	local H, S, V = Color3.toHSV(o.Default or Cur.Accent)
-	local sw = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(28, 18), Parent = c.row})
-	corner(sw, 3) stroke(sw, "Stroke", 1, 0)
-	local hex = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -36, .5, 0), Size = UDim2.fromOffset(66, 18), Text = "", ClearTextOnFocus = false,
+	local sw = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = c.row})
+	corner(sw, 13) stroke(sw, "Stroke", 1.5, 0)
+	local hex = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -34, .5, 0), Size = UDim2.fromOffset(70, 24), Text = "", ClearTextOnFocus = false,
 		TextSize = 11, FontFace = font(), Parent = c.row})
-	bind(hex, "BackgroundColor3", "Bg") bind(hex, "TextColor3", "Text") corner(hex, 3)
+	bind(hex, "BackgroundColor3", "Bg") bind(hex, "TextColor3", "Text") corner(hex, 12)
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = c.col})
-	local sv = new("Frame", {Position = UDim2.fromOffset(0, 10), Size = UDim2.new(1, -24, 0, 104), Active = true, BackgroundColor3 = WHITE, Parent = body})
-	corner(sv, 4)
+	local sv = new("Frame", {Position = UDim2.fromOffset(0, 12), Size = UDim2.new(1, -26, 0, 110), Active = true, BackgroundColor3 = WHITE, Parent = body})
+	corner(sv, 10)
 	local wg = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = sv})
-	corner(wg, 4) new("UIGradient", {Transparency = NumberSequence.new(0, 1), Parent = wg})
+	corner(wg, 10) new("UIGradient", {Transparency = NumberSequence.new(0, 1), Parent = wg})
 	local bk = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = BLACK, Parent = sv})
-	corner(bk, 4) new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = bk})
-	local cur = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(10, 10), BackgroundTransparency = 1, Parent = sv})
-	corner(cur, 5) new("UIStroke", {Color = WHITE, Thickness = 2, Parent = cur})
-	local hue = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 10), Size = UDim2.fromOffset(14, 104), Active = true, BackgroundColor3 = WHITE, Parent = body})
-	corner(hue, 4)
+	corner(bk, 10) new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = bk})
+	local cur = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(12, 12), BackgroundTransparency = 1, Parent = sv})
+	corner(cur, 6) new("UIStroke", {Color = WHITE, Thickness = 2, Parent = cur})
+	local hue = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 12), Size = UDim2.fromOffset(16, 110), Active = true, BackgroundColor3 = WHITE, Parent = body})
+	corner(hue, 8)
 	local ks = {}
 	for i = 0, 6 do ks[#ks + 1] = ColorSequenceKeypoint.new(i / 6, Color3.fromHSV(math.min(i / 6, .999), 1, 1)) end
 	new("UIGradient", {Rotation = 90, Color = ColorSequence.new(ks), Parent = hue})
-	local hc = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.new(1, 4, 0, 3), BackgroundColor3 = WHITE, Parent = hue})
-	corner(hc, 1) new("UIStroke", {Color = BLACK, Transparency = .5, Thickness = 1, Parent = hc})
+	local hc = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.new(1, 4, 0, 4), BackgroundColor3 = WHITE, Parent = hue})
+	corner(hc, 2) new("UIStroke", {Color = BLACK, Transparency = .5, Thickness = 1, Parent = hc})
 	local function upd(silent)
 		local col = Color3.fromHSV(H, S, V)
 		sv.BackgroundColor3 = Color3.fromHSV(H, 1, 1)
@@ -853,7 +856,7 @@ function Box:AddColorPicker(o)
 	local open = false
 	sw.MouseButton1Click:Connect(function()
 		open = not open
-		tw(body, {Size = UDim2.new(1, 0, 0, open and 118 or 0)}, .24)
+		tw(body, {Size = UDim2.new(1, 0, 0, open and 126 or 0)}, .26)
 	end)
 	function obj:Set(v, silent)
 		if type(v) == "string" then
@@ -871,38 +874,31 @@ function Box:AddColorPicker(o)
 	return reg(o, obj)
 end
 
+-- pemilih tema berupa deretan lingkaran warna
 function Box:AddThemePicker(o)
 	o = o or {}
-	local c = self:_row({Title = o.Title or "Tema", Description = o.Description}, 0)
+	local c = self:_row({Title = o.Title or "Tema", Description = CurName}, 0)
 	local grid = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = 2, Parent = c.col})
-	pad(grid, 0, 10, 0, 0)
-	new("UIGridLayout", {CellSize = UDim2.fromOffset(64, 46), CellPadding = UDim2.fromOffset(8, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = grid})
+	pad(grid, 0, 12, 0, 0)
+	new("UIGridLayout", {CellSize = UDim2.fromOffset(32, 32), CellPadding = UDim2.fromOffset(10, 10), SortOrder = E.SortOrder.LayoutOrder, Parent = grid})
 	local chips = {}
 	for idx, name in ipairs(Senja:GetThemes()) do
 		local t = Themes[name]
-		local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = t.Bg, LayoutOrder = idx, Parent = grid})
-		corner(b, 6)
+		local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = t.Accent, LayoutOrder = idx, Parent = grid})
+		corner(b, 16)
 		local us = new("UIScale", {Parent = b})
-		local st = new("UIStroke", {Color = t.Stroke, Thickness = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = b})
-		local bar = new("Frame", {BackgroundColor3 = t.Surface, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 0, 14), Parent = b})
-		corner(bar, 3)
-		local dot = new("Frame", {BackgroundColor3 = t.Accent, Position = UDim2.fromOffset(4, 3), Size = UDim2.fromOffset(8, 8), Parent = bar})
-		corner(dot, 4)
-		local ln = new("Frame", {BackgroundColor3 = t.Sub, Position = UDim2.fromOffset(17, 5), Size = UDim2.fromOffset(22, 4), Parent = bar})
-		corner(ln, 2)
-		new("TextLabel", {BackgroundTransparency = 1, Text = name, TextSize = 10, FontFace = font(), TextColor3 = t.Text,
-			Position = UDim2.fromOffset(0, 25), Size = UDim2.new(1, 0, 0, 14), Parent = b})
-		b.MouseEnter:Connect(function() tw(us, {Scale = 1.06}, .1) end)
-		b.MouseLeave:Connect(function() tw(us, {Scale = 1}, .14) end)
-		b.MouseButton1Down:Connect(function() tw(us, {Scale = .96}, .06) end)
-		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1.06}, .1) end)
+		local ring = new("UIStroke", {Color = Cur.Text, Thickness = 2, Transparency = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = b})
+		b.MouseEnter:Connect(function() tw(us, {Scale = 1.12}, .14, Bk) end)
+		b.MouseLeave:Connect(function() tw(us, {Scale = 1}, .16) end)
+		b.MouseButton1Down:Connect(function() tw(us, {Scale = .9}, .07) end)
+		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1.12}, .16, Bk) end)
 		b.MouseButton1Click:Connect(function() Senja:SetTheme(name) safe(o.Callback, name) end)
-		chips[name] = {st = st, t = t}
+		chips[name] = {ring = ring, us = us}
 	end
 	local function paint()
+		if c.desc then c.desc.Text = CurName .. (AccentOverride and " (aksen kustom)" or "") end
 		for name, ch in pairs(chips) do
-			local sel = name == CurName
-			tw(ch.st, {Color = sel and ch.t.Accent or ch.t.Stroke, Thickness = sel and 2 or 1}, .14)
+			tw(ch.ring, {Transparency = (name == CurName and not AccentOverride) and 0 or 1, Color = Cur.Text}, .16)
 		end
 	end
 	Hooks[#Hooks + 1] = paint
@@ -916,22 +912,21 @@ function Box:AddSection(o)
 	if type(o) == "string" then o = {Title = o} end
 	local sec = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = self:_n(), Parent = self.Body})
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = sec})
-	local head = new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.new(1, 0, 0, 18), LayoutOrder = 1, Parent = sec})
-	local hl = label(head, string.upper(o.Title or ""), 10, "Sub", E.FontWeight.Bold)
-	hl.Position, hl.Size = UDim2.fromOffset(2, 0), UDim2.new(1, -20, 1, 0)
+	local head = new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.new(1, 0, 0, 24), LayoutOrder = 1, Parent = sec})
+	local hl = label(head, o.Title or "", 12, "Sub", E.FontWeight.SemiBold)
+	hl.Position, hl.Size = UDim2.fromOffset(4, 0), UDim2.new(1, -24, 1, 0)
 	local ar = img(head, "chevron", 11, "Sub")
-	ar.AnchorPoint, ar.Position = Vector2.new(1, .5), UDim2.new(1, -2, .5, 0)
+	ar.AnchorPoint, ar.Position = Vector2.new(1, .5), UDim2.new(1, -4, .5, 0)
 	local content = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = sec})
-	local group = new("Frame", {Position = UDim2.fromOffset(1, 1), Size = UDim2.new(1, -2, 0, 0), AutomaticSize = AY, Parent = content})
-	bind(group, "BackgroundColor3", "Surface") corner(group, 5) stroke(group, "Stroke", 1, 0)
-	local cl = new("UIListLayout", {SortOrder = E.SortOrder.LayoutOrder, Parent = group})
+	local group = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = content})
+	local cl = new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = group})
 	local open = o.Open ~= false
 	ar.Rotation = open and 0 or -90
-	local function full() return cl.AbsoluteContentSize.Y + 2 end
+	local function full() return cl.AbsoluteContentSize.Y end
 	cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		if open then content.Size = UDim2.new(1, 0, 0, full()) end
 	end)
-	local sub = newBox(self.Win, self.Tab, group, true)
+	local sub = newBox(self.Win, self.Tab, group)
 	sub.IsOpen, sub.Frame = open, sec
 	table.insert(self.Tab.Secs, sub)
 	-- ukuran dihitung ulang saat tab ditampilkan (layout di tab tersembunyi bisa belum terhitung)
@@ -939,11 +934,11 @@ function Box:AddSection(o)
 	function sub:SetOpen(v)
 		open = v
 		self.IsOpen = v
-		tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .24)
-		tw(ar, {Rotation = open and 0 or -90}, .2)
+		tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .26)
+		tw(ar, {Rotation = open and 0 or -90}, .22, Bk)
 	end
 	head.MouseEnter:Connect(function() tw(hl, {TextColor3 = Cur.Text}, .1) end)
-	head.MouseLeave:Connect(function() tw(hl, {TextColor3 = Cur.Sub}, .15) end)
+	head.MouseLeave:Connect(function() tw(hl, {TextColor3 = Cur.Sub}, .16) end)
 	head.MouseButton1Click:Connect(function() sub:SetOpen(not open) end)
 	return sub
 end
@@ -989,13 +984,24 @@ end
 function Window:_go(open)
 	self:_stop()
 	local _, cy = self:_px()
-	local dur = open and .34 or .26
-	local ez = open and Qn or Q
+	local dur = open and .36 or .26
 	self._tws = {
-		tw(self.Root, {Position = open and self.Home or UDim2.new(self.Home.X.Scale, self.Home.X.Offset, 0, cy)}, dur, ez),
-		tw(self.Scale, {Scale = open and self.UserScale or self.UserScale * .94}, dur, ez),
-		tw(self.Dim, {BackgroundTransparency = open and self.DimT or 1}, dur, ez),
+		tw(self.Root, {Position = open and self.Home or UDim2.new(self.Home.X.Scale, self.Home.X.Offset, 0, cy)}, dur, open and Qn or Q),
+		tw(self.Scale, {Scale = open and self.UserScale or self.UserScale * .94}, dur, open and Bk or Q),
+		tw(self.Dim, {BackgroundTransparency = open and self.DimT or 1}, dur, Q),
 	}
+end
+
+-- tombol melayang ikut berubah mengikuti status buka/tutup
+function Window:_fab()
+	if not self.Fab then return end
+	local op = self.Open
+	tw(self.FabScale, {Scale = op and .84 or 1}, .24, Bk)
+	tw(self.FabStroke, {Color = op and Cur.Accent or Cur.Stroke}, .2)
+	tw(self.Fab, {BackgroundTransparency = op and .3 or 0}, .2)
+end
+function Window:SetFab(on)
+	if self.Fab then self.Fab.Visible = on and true or false end
 end
 
 -- gagang atas: ikut ditarik, melebar, berubah warna saat sudah cukup jauh
@@ -1042,6 +1048,7 @@ function Window:Toggle(v)
 	self.Open = v
 	self._tok += 1
 	local tok = self._tok
+	self:_fab()
 	if v then
 		self.Root.Visible, self.Dim.Visible = true, true
 		self:_go(true)
@@ -1072,30 +1079,42 @@ function Window:SetDim(on)
 	if self.Open and not self.Pulling then tw(self.Dim, {BackgroundTransparency = self.DimT}, .2) end
 end
 
+function Window:ResetPos()
+	self.Home = UDim2.fromScale(.5, .5)
+	if self.Open then
+		self:_stop()
+		tw(self.Root, {Position = self.Home}, .3, Qn)
+	end
+end
+
 function Window:Destroy()
 	for _, c in ipairs(self.Conns) do pcall(function() c:Disconnect() end) end
 	self._tok += 1
 	self.Open = false
 	self.Handle.Visible = false
+	if self.Fab then self.Fab.Visible = false end
 	self:_go(false)
 	local i = table.find(Senja.Windows, self)
 	if i then table.remove(Senja.Windows, i) end
 	task.delay(.3, function() self.Gui:Destroy() end)
 end
 
+-- pindah tab: halaman lama keluar, halaman baru masuk dari arah yang sama dengan gerak indikator
 function Window:Select(tab)
 	if self.Current == tab then return end
 	local old = self.Current
 	self.Current = tab
+	local dir = (old and old.Index > tab.Index) and -1 or 1
 	if old then
 		old._paint(false)
 		local g = old.Group
-		tw(g, {GroupTransparency = 1, Position = UDim2.fromOffset(0, -8)}, .12)
-		task.delay(.12, function() if self.Current ~= old then g.Visible = false end end)
+		tw(g, {GroupTransparency = 1, Position = UDim2.fromOffset(-26 * dir, 0)}, .16)
+		task.delay(.16, function() if self.Current ~= old then g.Visible = false end end)
 	end
 	tab._paint(true)
-	tab.Group.Position, tab.Group.GroupTransparency, tab.Group.Visible = UDim2.fromOffset(0, 12), 1, true
-	tw(tab.Group, {GroupTransparency = 0, Position = UDim2.new()}, .22)
+	tab.Group.Position, tab.Group.GroupTransparency, tab.Group.Visible = UDim2.fromOffset(30 * dir, 0), 1, true
+	tw(tab.Group, {GroupTransparency = 0, Position = UDim2.new()}, .3, Qn)
+	self:_moveInd(old ~= nil)
 	self:_filter(self.SearchBox.Text)
 	for _, s in ipairs(tab.Secs) do s.Refresh() end
 	task.defer(function() for _, s in ipairs(tab.Secs) do s.Refresh() end end)
@@ -1119,76 +1138,99 @@ function Window:_filter(q)
 	end
 end
 
+-- semua tombol tab berbagi lebar sama; indikator bergeser di antaranya
+function Window:_layoutTabs()
+	local n = #self.Tabs
+	for i, t in ipairs(self.Tabs) do
+		t.Index = i
+		t.Btn.Size = UDim2.new(1 / n, 0, 1, 0)
+		t.Btn.Position = UDim2.new((i - 1) / n, 0, 0, 0)
+	end
+	self.Ind.Size = UDim2.new(1 / n, -4, 1, 0)
+	self:_moveInd(false)
+end
+function Window:_moveInd(anim)
+	local t = self.Current
+	if not t then return end
+	local pos = UDim2.new((t.Index - 1) / #self.Tabs, 2, 0, 0)
+	self.Ind.Visible = true
+	if anim then tw(self.Ind, {Position = pos}, .36, Bk) else self.Ind.Position = pos end
+end
+
 function Window:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
-	local btn = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = #self.Tabs + 1, Parent = self.TabList})
-	bind(btn, "BackgroundColor3", "Hover") corner(btn, 4)
-	local pill = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, .5, 0), Size = UDim2.fromOffset(2, 0), Parent = btn})
-	bind(pill, "BackgroundColor3", "Accent")
-	local ic = img(btn, o.Icon or "star", 14, "Sub")
-	ic.AnchorPoint, ic.Position = Vector2.new(0, .5), UDim2.new(0, 12, .5, 0)
-	local lb = label(btn, o.Title or "Tab", 13, "Sub")
-	lb.Position, lb.Size = UDim2.new(0, 34, .5, -9), UDim2.new(1, -40, 0, 18)
-	local hit = new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1, 1), Parent = btn})
+	local win = self
+	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = self.Nav})
+	local cont = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+		Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = btn})
+	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center,
+		HorizontalAlignment = E.HorizontalAlignment.Center, Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = cont})
+	local cus = new("UIScale", {Parent = cont})
+	local ic = img(cont, o.Icon or "star", 14, "Sub")
+	ic.LayoutOrder = 1
+	local lb = label(cont, o.Title or "Tab", 12, "Sub", E.FontWeight.SemiBold)
+	lb.AutomaticSize, lb.Size, lb.LayoutOrder = AX, UDim2.fromOffset(0, 16), 2
 
 	local grp = new("CanvasGroup", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, GroupTransparency = 1, Parent = self.Pages})
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
-		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .3, Parent = grp})
-	bind(sc, "ScrollBarImageColor3", "Stroke")
-	new("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = E.SortOrder.LayoutOrder, Parent = sc})
-	pad(sc, 12, 12, 12, 30)
+		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
+	bind(sc, "ScrollBarImageColor3", "Track")
+	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = sc})
+	pad(sc, 14, 6, 14, 28)
 
-	local tab = newBox(self, nil, sc, false)
-	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll = tab, {}, grp, {}, sc
-	local win = self
+	local tab = newBox(self, nil, sc)
+	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll, tab.Btn = tab, {}, grp, {}, sc, btn
 	tab._paint = function(sel, inst)
-		local t = inst and 0 or .14
-		tw(btn, {BackgroundTransparency = sel and 0 or 1}, t)
-		tw(pill, {Size = UDim2.fromOffset(2, sel and 14 or 0)}, t)
+		local t = inst and 0 or .18
 		tw(ic, {ImageColor3 = sel and Cur.Accent or Cur.Sub}, t)
 		tw(lb, {TextColor3 = sel and Cur.Text or Cur.Sub}, t)
 	end
-	hit.MouseEnter:Connect(function()
-		tw(ic, {Position = UDim2.new(0, 15, .5, 0)}, .12)
-		if win.Current ~= tab then tw(btn, {BackgroundTransparency = .6}, .1) end
+	btn.MouseEnter:Connect(function() if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Text}, .1) end end)
+	btn.MouseLeave:Connect(function()
+		if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Sub}, .16) end
+		tw(cus, {Scale = 1}, .16)
 	end)
-	hit.MouseLeave:Connect(function()
-		tw(ic, {Position = UDim2.new(0, 12, .5, 0)}, .15)
-		if win.Current ~= tab then tw(btn, {BackgroundTransparency = 1}, .12) end
-	end)
-	hit.MouseButton1Click:Connect(function() win:Select(tab) end)
+	btn.MouseButton1Down:Connect(function() tw(cus, {Scale = .92}, .08) end)
+	btn.MouseButton1Up:Connect(function() tw(cus, {Scale = 1}, .24, Bk) end)
+	btn.MouseButton1Click:Connect(function() win:Select(tab) end)
 	Hooks[#Hooks + 1] = function() tab._paint(win.Current == tab) end
 	table.insert(self.Tabs, tab)
+	self:_layoutTabs()
 	if #self.Tabs == 1 then self:Select(tab) end
 	return tab
 end
 
 function Window:Dialog(o)
 	local ov = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 100, Parent = self.Main})
-	tw(ov, {BackgroundTransparency = .5}, .15)
-	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(310, 0), AutomaticSize = AY, Parent = ov})
-	bind(card, "BackgroundColor3", "Surface") corner(card, 6) stroke(card, "Stroke", 1, 0) pad(card, 16, 16, 16, 14)
-	local us = new("UIScale", {Scale = .94, Parent = card})
-	tw(us, {Scale = 1}, .2)
+	corner(ov, 20)
+	tw(ov, {BackgroundTransparency = .4}, .16)
+	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(320, 0), AutomaticSize = AY, Parent = ov})
+	bind(card, "BackgroundColor3", "Surface") corner(card, 20) stroke(card, "Stroke", 1, 0) pad(card, 20, 20, 20, 16)
+	local us = new("UIScale", {Scale = .9, Parent = card})
+	tw(us, {Scale = 1}, .28, Bk)
 	new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = card})
-	label(card, o.Title or "Konfirmasi", 15, "Text", E.FontWeight.Bold).LayoutOrder = 1
+	label(card, o.Title or "Konfirmasi", 16, "Text", E.FontWeight.Bold).LayoutOrder = 1
 	local ct = label(card, o.Content or "", 12, "Sub")
 	ct.TextWrapped, ct.AutomaticSize, ct.Size, ct.LayoutOrder = true, AY, UDim2.new(1, 0, 0, 0), 2
-	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 3, Parent = card})
-	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, HorizontalAlignment = E.HorizontalAlignment.Right, Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = row})
+	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 38), LayoutOrder = 3, Parent = card})
+	pad(row, 0, 8, 0, 0)
+	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, HorizontalAlignment = E.HorizontalAlignment.Right, Padding = UDim.new(0, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = row})
 	local function close()
-		tw(us, {Scale = .96}, .12)
-		tw(ov, {BackgroundTransparency = 1}, .12)
-		task.wait(.13)
+		tw(us, {Scale = .94}, .14)
+		tw(ov, {BackgroundTransparency = 1}, .14)
+		task.wait(.15)
 		ov:Destroy()
 	end
 	for i, b in ipairs(o.Buttons or {{Title = "OK"}}) do
-		local bt = new("TextButton", {AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(math.max(64, #b.Title * 7 + 24), 28), LayoutOrder = i, Parent = row})
-		bind(bt, "BackgroundColor3", b.Primary and "Accent" or "Hover") corner(bt, 4)
+		local bt = new("TextButton", {AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(math.max(72, #b.Title * 7 + 28), 30), LayoutOrder = i, Parent = row})
+		bind(bt, "BackgroundColor3", b.Primary and "Accent" or "Hover") corner(bt, 15)
+		local bs = new("UIScale", {Parent = bt})
 		local l = label(bt, b.Title, 12, b.Primary and "OnAccent" or "Text", E.FontWeight.SemiBold)
 		l.Size, l.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
-		bt.MouseEnter:Connect(function() tw(bt, {BackgroundTransparency = .15}, .08) end)
-		bt.MouseLeave:Connect(function() tw(bt, {BackgroundTransparency = 0}, .12) end)
+		bt.MouseEnter:Connect(function() tw(bt, {BackgroundTransparency = .12}, .1) end)
+		bt.MouseLeave:Connect(function() tw(bt, {BackgroundTransparency = 0}, .14) tw(bs, {Scale = 1}, .16) end)
+		bt.MouseButton1Down:Connect(function() tw(bs, {Scale = .94}, .07) end)
+		bt.MouseButton1Up:Connect(function() tw(bs, {Scale = 1}, .2, Bk) end)
 		bt.MouseButton1Click:Connect(function() task.spawn(close) safe(b.Callback) end)
 	end
 end
@@ -1236,7 +1278,7 @@ function Window:BuildSettings()
 	local tab = self:AddTab({Title = "Pengaturan", Icon = "gear"})
 	local win = self
 	local tampil = tab:AddSection("Tampilan")
-	tampil:AddThemePicker({Title = "Tema", Description = "pilih palet warna, langsung berubah"})
+	tampil:AddThemePicker({Title = "Tema"})
 	local setting = false
 	local accent
 	accent = tampil:AddColorPicker({Title = "Warna aksen", Description = "timpa warna aksen tema yang aktif", Default = Cur.Accent, Callback = function(c)
@@ -1248,6 +1290,7 @@ function Window:BuildSettings()
 	tampil:AddSlider({Title = "Ukuran UI", Min = 70, Max = 130, Default = 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) end})
 	tampil:AddSlider({Title = "Kecepatan animasi", Description = "makin tinggi makin cepat", Min = 50, Max = 200, Increment = 10, Default = 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v end})
 	tampil:AddToggle({Title = "Redupkan latar", Description = "layar menggelap saat UI terbuka", Default = true, Callback = function(v) win:SetDim(v) end})
+	tampil:AddToggle({Title = "Tombol melayang", Description = "tombol bulat untuk buka/tutup UI, bisa digeser", Default = true, Callback = function(v) win:SetFab(v) end})
 	tampil:AddKeybind({Title = "Tombol buka/tutup", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k end end})
 	tampil:AddLabel({Title = "Gestur", Description = "tarik ke bawah dari tengah atas layar untuk membuka; tarik ke atas dari garis di bawah window untuk menutup"})
 	local cfg = tab:AddSection("Konfigurasi")
@@ -1274,6 +1317,7 @@ function Window:BuildSettings()
 			end)
 		elseif afk then afk:Disconnect() afk = nil end
 	end})
+	lain:AddButton({Title = "Reset posisi window", Description = "kembalikan ke tengah layar", Icon = "target", Callback = function() win:ResetPos() end})
 	lain:AddButton({Title = "Tutup UI", Description = "hapus window ini sepenuhnya", Icon = "x", Callback = function() win:_confirmClose() end})
 	return tab
 end
@@ -1335,78 +1379,99 @@ function Senja:CreateWindow(o)
 	mount(gui)
 	local dim = new("Frame", {BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui})
 	local vp = workspace.CurrentCamera.ViewportSize
-	local sz = o.Size or Vector2.new(620, 410)
+	local sz = o.Size or Vector2.new(640, 440)
 	local root = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = win.Home,
 		Size = UDim2.fromOffset(math.min(sz.X, vp.X - 24), math.min(sz.Y, vp.Y - 24)), Parent = gui})
 	local scale = new("UIScale", {Scale = .94, Parent = root})
 	local main = new("Frame", {Size = UDim2.fromScale(1, 1), ClipsDescendants = true, Parent = root})
-	bind(main, "BackgroundColor3", "Bg") corner(main, 6) stroke(main, "Stroke", 1, 0)
+	bind(main, "BackgroundColor3", "Bg") corner(main, 20) stroke(main, "Stroke", 1, 0)
 	win.Gui, win.Root, win.Scale, win.Main, win.Dim = gui, root, scale, main, dim
 
-	-- topbar
-	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 38), Parent = main})
-	local logo = img(top, o.Icon or "logo", 18, "Accent")
-	logo.AnchorPoint, logo.Position = Vector2.new(0, .5), UDim2.new(0, 12, .5, 0)
-	local tl = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = top})
+	-- header
+	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), Parent = main})
+	local logo = img(top, o.Icon or "logo", 20, "Accent")
+	logo.AnchorPoint, logo.Position = Vector2.new(0, .5), UDim2.new(0, 18, .5, 0)
+	local tl = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(46, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = top})
 	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center, Padding = UDim.new(0, 8), Parent = tl})
-	local t1 = label(tl, o.Title or "Senja", 14, "Text", E.FontWeight.SemiBold)
+	local t1 = label(tl, o.Title or "Senja", 15, "Text", E.FontWeight.Bold)
 	t1.AutomaticSize, t1.Size = AX, UDim2.fromOffset(0, 18)
 	local t2 = label(tl, o.Subtitle or ("v" .. Senja.Version), 11, "Sub")
 	t2.AutomaticSize, t2.Size = AX, UDim2.fromOffset(0, 14)
-	local tline = new("Frame", {Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), Parent = top})
-	bind(tline, "BackgroundColor3", "Stroke")
 
 	local function wbtn(ic, x, fn)
 		local b = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, .5),
-			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = top})
+			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(28, 28), Parent = top})
+		bind(b, "BackgroundColor3", "Hover") corner(b, 14)
+		local us = new("UIScale", {Parent = b})
 		local i = img(b, ic, 12, "Sub")
 		i.AnchorPoint, i.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
-		b.MouseEnter:Connect(function() tw(i, {ImageColor3 = Cur.Text}, .1) end)
-		b.MouseLeave:Connect(function() tw(i, {ImageColor3 = Cur.Sub}, .15) end)
+		b.MouseEnter:Connect(function() tw(b, {BackgroundTransparency = 0}, .1) tw(i, {ImageColor3 = Cur.Text}, .1) end)
+		b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 1}, .16) tw(i, {ImageColor3 = Cur.Sub}, .16) tw(us, {Scale = 1}, .16) end)
+		b.MouseButton1Down:Connect(function() tw(us, {Scale = .86}, .07) end)
+		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1}, .22, Bk) end)
 		b.MouseButton1Click:Connect(fn)
 	end
-	wbtn("x", -8, function() win:_confirmClose() end)
-	wbtn("minus", -34, function()
+	wbtn("x", -14, function() win:_confirmClose() end)
+	wbtn("minus", -46, function()
 		win:Toggle(false)
-		Senja:Notify({Title = "UI disembunyikan", Content = "geser ke bawah dari tepi atas layar, atau tekan " .. win.ToggleKey.Name, Duration = 3})
+		Senja:Notify({Title = "UI disembunyikan", Content = "ketuk tombol bulat, tarik dari tepi atas layar, atau tekan " .. win.ToggleKey.Name, Duration = 3})
 	end)
 
-	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -66, .5, 0), Size = UDim2.fromOffset(130, 22), Parent = top})
-	bind(sbox, "BackgroundColor3", "Surface") corner(sbox, 3)
-	local sst = stroke(sbox, "Stroke", 1, 0)
-	local si = img(sbox, "search", 11, "Sub")
+	-- pencarian: ikon kecil yang melebar saat diketuk
+	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -80, .5, 0), Size = UDim2.fromOffset(28, 28), ClipsDescendants = true, Parent = top})
+	bind(sbox, "BackgroundColor3", "Hover") corner(sbox, 14)
+	local si = img(sbox, "search", 12, "Sub")
 	si.AnchorPoint, si.Position = Vector2.new(0, .5), UDim2.new(0, 8, .5, 0)
-	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(25, 0), Size = UDim2.new(1, -31, 1, 0), Text = "", PlaceholderText = "cari...",
-		ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = sbox})
+	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(26, 0), Size = UDim2.fromOffset(116, 28), Text = "", PlaceholderText = "cari...",
+		ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Visible = false, Parent = sbox})
 	bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
-	sb.Focused:Connect(function() tw(sst, {Color = Cur.Accent}, .1) tw(si, {ImageColor3 = Cur.Accent}, .1) end)
-	sb.FocusLost:Connect(function() tw(sst, {Color = Cur.Stroke}, .15) tw(si, {ImageColor3 = Cur.Sub}, .15) end)
+	local sbtn = new("TextButton", {Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = sbox})
+	local expanded = false
+	local function expand(v)
+		if expanded == v then return end
+		expanded = v
+		if v then sb.Visible = true end
+		sbtn.Visible = not v
+		tw(sbox, {Size = UDim2.fromOffset(v and 150 or 28, 28)}, .28, Qn)
+		tw(si, {ImageColor3 = v and Cur.Accent or Cur.Sub}, .15)
+		if not v then task.delay(.28, function() if not expanded then sb.Visible = false end end) end
+	end
+	sbtn.MouseButton1Click:Connect(function() expand(true) sb:CaptureFocus() end)
+	sb.FocusLost:Connect(function() if sb.Text == "" then expand(false) end end)
 	sb:GetPropertyChangedSignal("Text"):Connect(function() win:_filter(sb.Text) end)
 	win.SearchBox = sb
 
-	-- sidebar
-	local side = new("Frame", {Position = UDim2.fromOffset(0, 38), Size = UDim2.new(0, 132, 1, -38), Parent = main})
-	bind(side, "BackgroundColor3", "Side")
-	local sline = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 1, 1, 0), Parent = side})
-	bind(sline, "BackgroundColor3", "Stroke")
-	local FOOT = 54
-	local tabs = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 1, -(FOOT + 14)),
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = AY, ScrollBarThickness = 0, Parent = side})
-	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = tabs})
-	pad(tabs, 8, 0, 8, 0)
-	win.TabList = tabs
+	-- navigasi pill: indikator bergeser mengikuti tab yang dipilih
+	local nav = new("Frame", {Position = UDim2.fromOffset(14, 54), Size = UDim2.new(1, -28, 0, 38), Parent = main})
+	bind(nav, "BackgroundColor3", "Side") corner(nav, 19)
+	local navIn = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = nav})
+	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Position = UDim2.fromOffset(2, 0), Parent = navIn})
+	bind(ind, "BackgroundColor3", "Track") corner(ind, 16)
+	win.Nav, win.Ind = navIn, ind
 
-	-- profil pemain di bawah sidebar
-	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = side})
-	local fline = new("Frame", {Size = UDim2.new(1, 0, 0, 1), Parent = foot})
+	-- halaman + footer profil
+	local FOOT = 46
+	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 100), Size = UDim2.new(1, 0, 1, -(100 + FOOT)), Parent = main})
+	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
+	local fline = new("Frame", {Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -32, 0, 1), Parent = foot})
 	bind(fline, "BackgroundColor3", "Stroke")
-	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 12, .5, 1), Size = UDim2.fromOffset(32, 32),
+	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 16, .5, 1), Size = UDim2.fromOffset(28, 28),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. LP.UserId .. "&w=150&h=150", Parent = foot})
-	bind(av, "BackgroundColor3", "Hover") corner(av, 16) stroke(av, "Stroke", 1, 0)
+	bind(av, "BackgroundColor3", "Hover") corner(av, 14)
 	local dn = label(foot, LP.DisplayName, 12, "Text", E.FontWeight.SemiBold)
-	dn.Position, dn.Size, dn.TextTruncate = UDim2.fromOffset(52, 13), UDim2.new(1, -60, 0, 15), E.TextTruncate.AtEnd
+	dn.Position, dn.Size, dn.TextTruncate = UDim2.fromOffset(52, 8), UDim2.fromOffset(150, 15), E.TextTruncate.AtEnd
 	local un = label(foot, "@" .. LP.Name, 10, "Sub")
-	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(52, 29), UDim2.new(1, -60, 0, 12), E.TextTruncate.AtEnd
+	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(52, 24), UDim2.fromOffset(150, 12), E.TextTruncate.AtEnd
+	local fps = label(foot, "", 11, "Sub")
+	fps.AnchorPoint, fps.Position, fps.Size, fps.TextXAlignment = Vector2.new(1, .5), UDim2.new(1, -18, .5, 1), UDim2.fromOffset(70, 14), E.TextXAlignment.Right
+	local acc, frames = 0, 0
+	win:_c(RunService.Heartbeat, function(dt)
+		acc += dt frames += 1
+		if acc >= .5 then
+			fps.Text = math.floor(frames / acc + .5) .. " fps"
+			acc, frames = 0, 0
+		end
+	end)
 	-- kalau rbxthumb tidak termuat, coba lewat GetUserThumbnailAsync
 	task.spawn(function()
 		local t0 = os.clock()
@@ -1419,9 +1484,7 @@ function Senja:CreateWindow(o)
 		end
 	end)
 
-	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.new(0, 132, 0, 38), Size = UDim2.new(1, -132, 1, -38), Parent = main})
-
-	-- drag window lewat topbar
+	-- geser window lewat header
 	local dragging, ds, sp = false, nil, nil
 	top.InputBegan:Connect(function(i)
 		if i.UserInputType == E.UserInputType.MouseButton1 or i.UserInputType == E.UserInputType.Touch then
@@ -1491,6 +1554,46 @@ function Senja:CreateWindow(o)
 	swipe(win, handle, true)
 	swipe(win, grab, false)
 
+	-- tombol bulat melayang: ketuk = buka/tutup UI, seret = pindah (menempel ke sisi layar saat dilepas)
+	local fab = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(36, 100),
+		Size = UDim2.fromOffset(46, 46), ZIndex = 60, Parent = gui})
+	bind(fab, "BackgroundColor3", "Bg") corner(fab, 23)
+	local fst = stroke(fab, "Stroke", 1.5, 0)
+	local fus = new("UIScale", {Parent = fab})
+	local fic = img(fab, o.Icon or "logo", 22, "Accent")
+	fic.AnchorPoint, fic.Position, fic.ZIndex = Vector2.new(.5, .5), UDim2.fromScale(.5, .5), 61
+	win.Fab, win.FabStroke, win.FabScale = fab, fst, fus
+	local fd, fmoved, fx0, fp0 = false, false, nil, nil
+	fab.MouseEnter:Connect(function() if not fd then tw(fus, {Scale = win.Open and .9 or 1.1}, .14, Bk) end end)
+	fab.MouseLeave:Connect(function() if not fd then tw(fus, {Scale = win.Open and .84 or 1}, .16) end end)
+	fab.InputBegan:Connect(function(i)
+		if fd then return end
+		if i.UserInputType == E.UserInputType.MouseButton1 or i.UserInputType == E.UserInputType.Touch then
+			fd, fmoved, fx0, fp0 = true, false, i.Position, fab.Position
+			tw(fus, {Scale = .88}, .08)
+		end
+	end)
+	win:_c(UIS.InputChanged, function(i)
+		if not fd then return end
+		if i.UserInputType ~= E.UserInputType.MouseMovement and i.UserInputType ~= E.UserInputType.Touch then return end
+		local d = i.Position - fx0
+		if not fmoved and d.Magnitude > 6 then fmoved = true end
+		if fmoved then fab.Position = UDim2.fromOffset(fp0.X.Offset + d.X, fp0.Y.Offset + d.Y) end
+	end)
+	win:_c(UIS.InputEnded, function(i)
+		if not fd then return end
+		if i.UserInputType ~= E.UserInputType.MouseButton1 and i.UserInputType ~= E.UserInputType.Touch then return end
+		fd = false
+		tw(fus, {Scale = win.Open and .84 or 1}, .24, Bk)
+		if not fmoved then
+			win:Toggle()
+			return
+		end
+		local v = workspace.CurrentCamera.ViewportSize
+		local x, y = fab.Position.X.Offset, fab.Position.Y.Offset
+		tw(fab, {Position = UDim2.fromOffset(x < v.X / 2 and 36 or v.X - 36, math.clamp(y, 36, v.Y - 36))}, .32, Qn)
+	end)
+
 	win:_c(UIS.InputBegan, function(i, gpd)
 		if not gpd and i.KeyCode == win.ToggleKey then win:Toggle() end
 	end)
@@ -1512,8 +1615,8 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 1.3",
-	Theme = "Senja",            -- Senja | Malam | Rimba | Samudra | Anggur | Mawar | Kapur | Pagi
+	Subtitle = "build 2.0",
+	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
 
@@ -1544,7 +1647,7 @@ gerak:AddButton({Title = "Reset karakter", Icon = "bolt", Callback = function()
 end})
 
 local info = Utama:AddSection({Title = "Info", Open = false})
-info:AddLabel({Title = "Cara pakai", Description = "klik judul section untuk lipat/buka. ketik di kolom cari untuk menyaring fitur."})
+info:AddLabel({Title = "Cara pakai", Description = "ketuk judul section untuk melipat/membuka. ketuk ikon kaca pembesar di kanan atas untuk mencari fitur."})
 info:AddInput({Title = "Catatan", Placeholder = "tulis apa aja", Flag = "note", Callback = function(t, enter) if enter then print(t) end end})
 
 local t = Tempur:AddSection("Target")
@@ -1553,9 +1656,9 @@ t:AddDropdown({Title = "Filter tim", Values = {"Musuh", "Teman", "Netral", "NPC"
 t:AddKeybind({Title = "Aktifkan aim", Default = Enum.KeyCode.E, Mode = "Toggle", Callback = function(on) print("aim", on) end, Flag = "aimkey"})
 
 local v = Visual:AddSection("Warna")
-v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(224, 150, 92), Flag = "esp", Callback = function(c) print(c) end})
+v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
 
-Win:BuildSettings()   -- tab tema, ukuran, keybind, simpan/muat config, anti afk
+Win:BuildSettings()   -- tab tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk
 
 Senja:Notify({Title = "Siap", Content = "UI berhasil dimuat", Type = "success", Duration = 5})
-Win:Dialog({Title = "Selamat datang", Content = "Geser ke atas dari garis di bawah window untuk menyembunyikan UI. Geser ke bawah dari tepi atas layar untuk membukanya lagi. RightShift juga berfungsi.", Buttons = {{Title = "Oke", Primary = true}}})
+Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI. Tarik ke bawah dari tengah atas layar juga bisa, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
