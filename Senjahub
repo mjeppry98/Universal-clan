@@ -1087,6 +1087,16 @@ function Window:SetMinimized(v)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .2) end
 	self.Grab.Visible = not v
 	self.MinIcon.Image = Senja.Icon(v and "chevron" or "minus")
+	-- footer menempel di bawah window, jadi harus disembunyikan langsung (kalau tidak ia naik menimpa header).
+	-- bilah tab dan halaman disembunyikan setelah animasi mengecil selesai.
+	if v then
+		self.Foot.Visible = false
+		task.delay(.3, function()
+			if self.Minimized then self.NavFrame.Visible, self.Pages.Visible = false, false end
+		end)
+	else
+		self.Foot.Visible, self.NavFrame.Visible, self.Pages.Visible = true, true, true
+	end
 end
 function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
@@ -1558,12 +1568,13 @@ function Senja:CreateWindow(o)
 	local navIn = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = nav})
 	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Position = UDim2.fromOffset(2, 0), Parent = navIn})
 	bind(ind, "BackgroundColor3", "Track") corner(ind, 16)
-	win.Nav, win.Ind = navIn, ind
+	win.Nav, win.Ind, win.NavFrame = navIn, ind, nav
 
 	-- halaman + footer profil
 	local FOOT = 46
 	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 100), Size = UDim2.new(1, 0, 1, -(100 + FOOT)), Parent = main})
 	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
+	win.Foot = foot
 	local fline = new("Frame", {Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -32, 0, 1), Parent = foot})
 	bind(fline, "BackgroundColor3", "Stroke")
 	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 16, .5, 1), Size = UDim2.fromOffset(28, 28),
