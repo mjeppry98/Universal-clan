@@ -1,4 +1,4 @@
--- Senja Hub 2.4.1 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.5.0 | paste & execute langsung di executor (library + contoh jadi satu)
 --
 -- API ringkas
 --   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon})
@@ -16,7 +16,7 @@
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.4.1", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.5.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 -- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
 do
@@ -1059,25 +1059,49 @@ function Box:AddSection(o)
 	local cl = new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = group})
 	local open = o.Open ~= false
 	ar.Rotation = open and 0 or -90
-	local function full() return cl.AbsoluteContentSize.Y end
+
+	-- faktor skala UI yang sedang berlaku (UIScale di window). AbsoluteSize / AbsoluteContentSize sudah terkena skala,
+	-- sedangkan Size offset belum, jadi tinggi dari Absolute* harus dibagi faktor ini sebelum dipakai sebagai offset.
+	-- (dulu tinggi section dipasang mentah dari AbsoluteContentSize, makanya isi section terpotong di skala UI selain 100%)
+	local win = self.Win
+	local function k()
+		local r = win.Root
+		local w, a = r.Size.X.Offset, r.AbsoluteSize.X
+		return (w > 0 and a > 0) and a / w or 1
+	end
 	local secTw
-	cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		if open and not (secTw and secTw.PlaybackState == E.PlaybackState.Playing) then content.Size = UDim2.new(1, 0, 0, full()) end
-	end)
+	-- section terbuka dan diam: tinggi dibiarkan mengikuti isi (AutomaticSize), jadi tidak pernah terpotong
+	-- dan tidak ada jeda saat isi berubah (dropdown dibuka, teks berganti, dll)
+	local function settle()
+		if open then
+			content.AutomaticSize = AY
+			content.Size = UDim2.new(1, 0, 0, 0)
+		end
+	end
+	if open then settle() end
+
 	local sub = newBox(self.Win, self.Tab, group)
 	sub.IsOpen, sub.Frame = open, sec
 	table.insert(self.Tab.Secs, sub)
-	-- ukuran dihitung ulang saat tab ditampilkan (layout di tab tersembunyi bisa belum terhitung)
-	sub.Refresh = function() if open then content.Size = UDim2.new(1, 0, 0, full()) end end
+	-- dipanggil saat tab ditampilkan: pastikan section terbuka kembali mengikuti isinya
+	sub.Refresh = function()
+		if open and not (secTw and secTw.PlaybackState == E.PlaybackState.Playing) then settle() end
+	end
 	function sub:SetOpen(v)
-		open = v
-		self.IsOpen = v
+		open = v and true or false
+		self.IsOpen = open
 		if secTw then secTw:Cancel() end
-		local mine = tw(content, {Size = UDim2.new(1, 0, 0, open and full() or 0)}, .2)
+		-- tinggi sekarang dan tinggi tujuan, dalam satuan offset
+		local s = k()
+		local from = content.AbsoluteSize.Y / s
+		local to = open and math.max(group.AbsoluteSize.Y, cl.AbsoluteContentSize.Y) / s or 0
+		content.AutomaticSize = E.AutomaticSize.None
+		content.Size = UDim2.new(1, 0, 0, from)
+		local mine = tw(content, {Size = UDim2.new(1, 0, 0, to)}, .2)
 		secTw = mine
-		-- setelah selesai, pas-kan ke tinggi asli (isi bisa berubah selama animasi, mis. dropdown dibuka)
+		-- setelah selesai, kembalikan ke AutomaticSize (isi bisa berubah selama animasi, mis. dropdown dibuka)
 		mine.Completed:Connect(function(st)
-			if mine == secTw and open and st == E.PlaybackState.Completed then content.Size = UDim2.new(1, 0, 0, full()) end
+			if mine == secTw and open and st == E.PlaybackState.Completed then settle() end
 		end)
 		tw(ar, {Rotation = open and 0 or -90}, .18)
 	end
@@ -1123,6 +1147,9 @@ end
 ------------------------------------------------------------ window
 local Window = {}
 Window.__index = Window
+
+-- rail tab di kiri: lebar rail, tinggi satu tombol tab, jarak antar tombol
+local RAIL, TABH, TABP = 56, 50, 4
 
 function Window:_c(sig, fn)
 	local c = sig:Connect(fn)
@@ -1218,26 +1245,19 @@ function Window:SetDim(on)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .15) end
 end
 
--- minimize: window mengecil jadi header saja (isi terpotong oleh ClipsDescendants). klik lagi untuk memulihkan.
+-- minimize: window mengecil jadi header saja. klik lagi untuk memulihkan.
+-- bilah tab, halaman (tombol, slider, dll), footer, dan garis tarik disembunyikan LANGSUNG saat minimize,
+-- bukan menunggu animasi mengecil selesai. kalau menunggu, isinya terlihat tersapu sebentar sebelum hilang.
 function Window:SetMinimized(v)
 	v = v and true or false
 	if self.Minimized == v then return end
 	self.Minimized = v
+	if openDD then openDD:Close() end
+	self.NavFrame.Visible, self.Pages.Visible, self.Foot.Visible, self.Grab.Visible = not v, not v, not v, not v
 	tw(self.Main, {Size = v and UDim2.new(1, 0, 0, 52) or UDim2.fromScale(1, 1)}, .26, Qn)
 	tw(self.MainCorner, {CornerRadius = UDim.new(0, v and 26 or 20)}, .26, Qn)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .2) end
-	self.Grab.Visible = not v
 	self.MinIcon.Image = Senja.Icon(v and "chevron" or "minus")
-	-- footer menempel di bawah window, jadi harus disembunyikan langsung (kalau tidak ia naik menimpa header).
-	-- bilah tab dan halaman disembunyikan setelah animasi mengecil selesai.
-	if v then
-		self.Foot.Visible = false
-		task.delay(.3, function()
-			if self.Minimized then self.NavFrame.Visible, self.Pages.Visible = false, false end
-		end)
-	else
-		self.Foot.Visible, self.NavFrame.Visible, self.Pages.Visible = true, true, true
-	end
 end
 function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
@@ -1320,14 +1340,6 @@ function Window:Confirm(title, content, onYes, onNo)
 	self:Dialog({Title = title, Content = content, Buttons = {{Title = "Batal", Callback = onNo}, {Title = "Ya", Primary = true, Callback = onYes}}})
 end
 
--- lebih dari 5 tab: label hanya tampil di tab yang dipilih, sisanya ikon saja
-function Window:_labels()
-	local compact = #self.Tabs > 5
-	for _, t in ipairs(self.Tabs) do
-		t.Lb.Visible = not compact or t == self.Current
-	end
-end
-
 -- pindah tab: halaman lama langsung disembunyikan, halaman baru menggeser masuk dari arah yang sama dengan indikator
 function Window:Select(tab)
 	if self.Current == tab then return end
@@ -1341,11 +1353,10 @@ function Window:Select(tab)
 		old.Group.Visible = false
 	end
 	tab._paint(true)
-	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(24 * dir, 0), true
+	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(0, 24 * dir), true
 	if tab._tw then tab._tw:Cancel() end
 	tab._tw = tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
 	self:_moveInd(old ~= nil)
-	self:_labels()
 	self:_filter(self.SearchBox.Text)
 	for _, s in ipairs(tab.Secs) do s.Refresh() end
 	task.defer(function() for _, s in ipairs(tab.Secs) do s.Refresh() end end)
@@ -1370,17 +1381,18 @@ function Window:_filter(q)
 	end
 end
 
--- semua tombol tab berbagi lebar sama; indikator bergeser di antaranya
+-- tombol tab disusun menurun di rail kiri; indikator bergeser naik-turun di antaranya.
+-- kalau tab banyak, rail bisa digulir.
 function Window:_layoutTabs()
 	local n = #self.Tabs
 	for i, t in ipairs(self.Tabs) do
 		t.Index = i
-		t.Btn.Size = UDim2.new(1 / n, 0, 1, 0)
-		t.Btn.Position = UDim2.new((i - 1) / n, 0, 0, 0)
+		t.Btn.Size = UDim2.new(1, 0, 0, TABH)
+		t.Btn.Position = UDim2.fromOffset(0, (i - 1) * (TABH + TABP))
 	end
-	self.Ind.Size = UDim2.new(1 / n, -4, 1, 0)
+	self.Ind.Size = UDim2.new(1, 0, 0, TABH)
+	self.Nav.CanvasSize = UDim2.fromOffset(0, math.max(0, n * (TABH + TABP) - TABP))
 	self:_moveInd(false)
-	self:_labels()
 end
 function Window:_moveInd(anim)
 	local t = self.Current
@@ -1390,7 +1402,7 @@ function Window:_moveInd(anim)
 		tw(self.Ind, {BackgroundTransparency = 1}, .12)
 		return
 	end
-	local pos = UDim2.new((t.Index - 1) / #self.Tabs, 2, 0, 0)
+	local pos = UDim2.fromOffset(0, (t.Index - 1) * (TABH + TABP))
 	local hidden = self.Ind.BackgroundTransparency > .5
 	self.Ind.Visible = true
 	if anim and not hidden then tw(self.Ind, {Position = pos}, .26, Qn) else self.Ind.Position = pos end
@@ -1417,15 +1429,16 @@ function Window:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
 	local win = self
 	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = self.Nav})
+	-- ikon di atas, label kecil di bawahnya (rata tengah)
 	local cont = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-		Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = btn})
-	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center,
-		HorizontalAlignment = E.HorizontalAlignment.Center, Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = cont})
+		Size = UDim2.fromScale(1, 1), Parent = btn})
+	new("UIListLayout", {FillDirection = E.FillDirection.Vertical, VerticalAlignment = E.VerticalAlignment.Center,
+		HorizontalAlignment = E.HorizontalAlignment.Center, Padding = UDim.new(0, 4), SortOrder = E.SortOrder.LayoutOrder, Parent = cont})
 	local cus = new("UIScale", {Parent = cont})
-	local ic = img(cont, o.Icon or "star", 14, "Sub")
+	local ic = img(cont, o.Icon or "star", 18, "Sub")
 	ic.LayoutOrder = 1
-	local lb = label(cont, o.Title or "Tab", 12, "Sub", E.FontWeight.SemiBold)
-	lb.AutomaticSize, lb.Size, lb.LayoutOrder = AX, UDim2.fromOffset(0, 16), 2
+	local lb = label(cont, o.Title or "Tab", 10, "Sub", E.FontWeight.SemiBold)
+	lb.Size, lb.LayoutOrder, lb.TextXAlignment, lb.TextTruncate = UDim2.new(1, -4, 0, 12), 2, E.TextXAlignment.Center, E.TextTruncate.AtEnd
 
 	local tab = self:_newPage()
 	tab.Btn, tab.Lb, tab.Title = btn, lb, o.Title or "Tab"
@@ -1815,17 +1828,18 @@ function Senja:CreateWindow(o)
 	sb:GetPropertyChangedSignal("Text"):Connect(function() win:_filter(sb.Text) end)
 	win.SearchBox = sb
 
-	-- navigasi pill: indikator bergeser mengikuti tab yang dipilih
-	local nav = new("Frame", {Position = UDim2.fromOffset(14, 54), Size = UDim2.new(1, -28, 0, 38), Parent = main})
-	bind(nav, "BackgroundColor3", "Side") corner(nav, 19)
-	local navIn = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = nav})
-	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Position = UDim2.fromOffset(2, 0), Parent = navIn})
-	bind(ind, "BackgroundColor3", "Track") corner(ind, 16)
+	-- navigasi di kiri: rail vertikal, indikator bergeser naik-turun mengikuti tab yang dipilih
+	local FOOT = 46
+	local nav = new("Frame", {Position = UDim2.fromOffset(10, 56), Size = UDim2.new(0, RAIL, 1, -(56 + FOOT + 8)), Parent = main})
+	bind(nav, "BackgroundColor3", "Side") corner(nav, 18)
+	local navIn = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 1, -8),
+		CanvasSize = UDim2.new(), ScrollBarThickness = 0, ScrollingDirection = E.ScrollingDirection.Y, Parent = nav})
+	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, 0, 0, TABH), Position = UDim2.fromOffset(0, 0), Parent = navIn})
+	bind(ind, "BackgroundColor3", "Track") corner(ind, 14)
 	win.Nav, win.Ind, win.NavFrame = navIn, ind, nav
 
-	-- halaman + footer profil
-	local FOOT = 46
-	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 100), Size = UDim2.new(1, 0, 1, -(100 + FOOT)), Parent = main})
+	-- halaman (di kanan rail) + footer profil
+	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(RAIL + 10, 52), Size = UDim2.new(1, -(RAIL + 10), 1, -(52 + FOOT)), Parent = main})
 	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
 	win.Foot = foot
 	local fline = new("Frame", {Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -32, 0, 1), Parent = foot})
@@ -2001,7 +2015,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 2.4",
+	Subtitle = "build 2.5",
 	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
@@ -2048,5 +2062,5 @@ v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), F
 
 Win:AutoLoad()   -- muat config otomatis (kalau diaktifkan di Pengaturan). taruh di akhir, setelah semua elemen dibuat
 
-Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.4", Type = "success", Duration = 4})
+Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.5", Type = "success", Duration = 4})
 Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
