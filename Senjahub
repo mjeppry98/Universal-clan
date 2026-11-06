@@ -1,8 +1,8 @@
--- Senja Hub 2.2 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.3 | paste & execute langsung di executor (library + contoh jadi satu)
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.2.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.3.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 local cr = cloneref or function(x) return x end
 local TweenService = cr(game:GetService("TweenService"))
@@ -1007,7 +1007,7 @@ end
 function Window:_progress(p)
 	local hy, cy = self:_px()
 	self:_at(cy + (hy - cy) * p)
-	self.Dim.BackgroundTransparency = 1 - (1 - self.DimT) * p
+	self.Dim.BackgroundTransparency = 1 - (1 - self:_dimT()) * p
 end
 -- hanya posisi dan redup latar yang dianimasikan (tanpa skala / pudar), jadi isi window tidak digambar ulang tiap frame
 function Window:_go(open)
@@ -1016,7 +1016,7 @@ function Window:_go(open)
 	local dur = open and .3 or .2
 	self._tws = {
 		tw(self.Root, {Position = open and self.Home or UDim2.new(self.Home.X.Scale, self.Home.X.Offset, 0, cy)}, dur, Qn),
-		tw(self.Dim, {BackgroundTransparency = open and self.DimT or 1}, dur, Q),
+		tw(self.Dim, {BackgroundTransparency = open and self:_dimT() or 1}, dur, Q),
 	}
 end
 
@@ -1069,10 +1069,26 @@ function Window:SetScale(n)
 	tw(self.Scale, {Scale = n}, .15)
 end
 
+-- saat diminimalkan latar tidak diredupkan, supaya game tetap terlihat
+function Window:_dimT() return self.Minimized and 1 or self.DimT end
+
 function Window:SetDim(on)
 	self.DimT = on and .62 or 1
-	if self.Open then tw(self.Dim, {BackgroundTransparency = self.DimT}, .15) end
+	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .15) end
 end
+
+-- minimize: window mengecil jadi header saja (isi terpotong oleh ClipsDescendants). klik lagi untuk memulihkan.
+function Window:SetMinimized(v)
+	v = v and true or false
+	if self.Minimized == v then return end
+	self.Minimized = v
+	tw(self.Main, {Size = v and UDim2.new(1, 0, 0, 52) or UDim2.fromScale(1, 1)}, .26, Qn)
+	tw(self.MainCorner, {CornerRadius = UDim.new(0, v and 26 or 20)}, .26, Qn)
+	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .2) end
+	self.Grab.Visible = not v
+	self.MinIcon.Image = Senja.Icon(v and "chevron" or "minus")
+end
+function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
 function Window:ResetPos()
 	self.Home = UDim2.fromScale(.5, .5)
@@ -1098,6 +1114,7 @@ function Window:Select(tab)
 	if self.Current == tab then return end
 	local old = self.Current
 	self.Current = tab
+	if not tab.IsSettings then self.LastTab = tab end
 	local dir = (old and old.Index > tab.Index) and -1 or 1
 	if old then
 		old._paint(false)
@@ -1145,9 +1162,32 @@ end
 function Window:_moveInd(anim)
 	local t = self.Current
 	if not t then return end
+	-- halaman pengaturan tidak ada di bilah tab, jadi indikator disembunyikan
+	if t.IsSettings then
+		tw(self.Ind, {BackgroundTransparency = 1}, .12)
+		return
+	end
 	local pos = UDim2.new((t.Index - 1) / #self.Tabs, 2, 0, 0)
+	local hidden = self.Ind.BackgroundTransparency > .5
 	self.Ind.Visible = true
-	if anim then tw(self.Ind, {Position = pos}, .26, Qn) else self.Ind.Position = pos end
+	if anim and not hidden then tw(self.Ind, {Position = pos}, .26, Qn) else self.Ind.Position = pos end
+	tw(self.Ind, {BackgroundTransparency = 0}, .12)
+end
+
+-- halaman berupa Frame biasa (bukan CanvasGroup) supaya tidak ada render ke tekstur tiap frame
+function Window:_newPage()
+	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = self.Pages})
+	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
+		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
+	bind(sc, "ScrollBarImageColor3", "Track")
+	-- UIPadding langsung di ScrollingFrame ikut memotong area gulir (bagian bawah dan atas jadi terpotong),
+	-- jadi layout + padding dipindah ke frame isi di dalamnya
+	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = sc})
+	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
+	pad(body, 14, 8, 14, 20)
+	local tab = newBox(self, nil, body)
+	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll = tab, {}, grp, {}, sc
+	return tab
 end
 
 function Window:AddTab(o)
@@ -1164,19 +1204,8 @@ function Window:AddTab(o)
 	local lb = label(cont, o.Title or "Tab", 12, "Sub", E.FontWeight.SemiBold)
 	lb.AutomaticSize, lb.Size, lb.LayoutOrder = AX, UDim2.fromOffset(0, 16), 2
 
-	-- halaman berupa Frame biasa (bukan CanvasGroup) supaya tidak ada render ke tekstur tiap frame
-	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = self.Pages})
-	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
-		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
-	bind(sc, "ScrollBarImageColor3", "Track")
-	-- UIPadding langsung di ScrollingFrame ikut memotong area gulir (bagian bawah dan atas jadi terpotong),
-	-- jadi layout + padding dipindah ke frame isi di dalamnya
-	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = sc})
-	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
-	pad(body, 14, 8, 14, 20)
-
-	local tab = newBox(self, nil, body)
-	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll, tab.Btn = tab, {}, grp, {}, sc, btn
+	local tab = self:_newPage()
+	tab.Btn = btn
 	tab._paint = function(sel, inst)
 		local t = inst and 0 or .12
 		tw(ic, {ImageColor3 = sel and Cur.Accent or Cur.Sub}, t)
@@ -1271,9 +1300,42 @@ function Window:ListConfigs()
 	return r
 end
 
-function Window:BuildSettings()
-	local tab = self:AddTab({Title = "Pengaturan", Icon = "gear"})
+-- pengaturan UI (tema, aksen, ukuran, kecepatan, dll) tersimpan otomatis ke Senja/ui.json dan dimuat lagi saat UI dijalankan
+local Prefs = {}
+local prefTok = 0
+local function prefPath() return Senja.Folder .. "/ui.json" end
+local function toHex(c)
+	return string.format("#%02X%02X%02X", math.floor(c.R * 255 + .5), math.floor(c.G * 255 + .5), math.floor(c.B * 255 + .5))
+end
+local function fromHex(s)
+	local r, g, b = tostring(s):match("^#?(%x%x)(%x%x)(%x%x)$")
+	if r then return C3(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16)) end
+end
+local function loadPrefs()
+	if not (readfile and isfile) then return {} end
+	local ok, d = pcall(function()
+		if not isfile(prefPath()) then return {} end
+		return HttpService:JSONDecode(readfile(prefPath()))
+	end)
+	return (ok and type(d) == "table") and d or {}
+end
+local function pref(k, v)
+	Prefs[k] = v
+	if not writefile then return end
+	prefTok += 1
+	local t = prefTok
+	task.delay(.5, function()
+		if t ~= prefTok then return end
+		pcall(function()
+			if makefolder and isfolder and not isfolder(Senja.Folder) then makefolder(Senja.Folder) end
+			writefile(prefPath(), HttpService:JSONEncode(Prefs))
+		end)
+	end)
+end
+
+function Window:_buildSettings(tab)
 	local win = self
+	local function P(k, v) if win.Live then pref(k, v) end end
 	local tampil = tab:AddSection("Tampilan")
 	tampil:AddThemePicker({Title = "Tema"})
 	local setting = false
@@ -1284,12 +1346,12 @@ function Window:BuildSettings()
 		setting = false
 	end})
 	Senja:OnTheme(function() if not setting then accent:Set(Cur.Accent, true) end end)
-	tampil:AddSlider({Title = "Ukuran UI", Min = 70, Max = 130, Default = 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) end})
-	tampil:AddSlider({Title = "Kecepatan animasi", Description = "makin tinggi makin cepat", Min = 50, Max = 200, Increment = 10, Default = 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v end})
-	tampil:AddToggle({Title = "Redupkan latar", Description = "layar menggelap saat UI terbuka", Default = true, Callback = function(v) win:SetDim(v) end})
-	tampil:AddToggle({Title = "Tombol melayang", Description = "tombol bulat untuk buka/tutup UI, bisa digeser. saat UI tertutup tombol tetap tampil", Default = true, Callback = function(v) win:SetFab(v) end})
-	tampil:AddKeybind({Title = "Tombol buka/tutup", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k end end})
-	tampil:AddLabel({Title = "Cara buka/tutup", Description = "ketuk tombol bulat atau tekan tombol keyboard. tarik ke atas dari garis di bawah window untuk menutup."})
+	tampil:AddSlider({Title = "Ukuran UI", Min = 70, Max = 130, Default = Prefs.scale or 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) P("scale", v) end})
+	tampil:AddSlider({Title = "Kecepatan animasi", Description = "makin tinggi makin cepat", Min = 50, Max = 200, Increment = 10, Default = Prefs.speed or 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v P("speed", v) end})
+	tampil:AddToggle({Title = "Redupkan latar", Description = "layar menggelap saat UI terbuka", Default = Prefs.dim ~= false, Callback = function(v) win:SetDim(v) P("dim", v) end})
+	tampil:AddToggle({Title = "Tombol melayang", Description = "tombol bulat untuk buka/tutup UI, bisa digeser. saat UI tertutup tombol tetap tampil", Default = Prefs.fab ~= false, Callback = function(v) win:SetFab(v) P("fab", v) end})
+	tampil:AddKeybind({Title = "Tombol buka/tutup", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k P("key", k.Name) end end})
+	tampil:AddLabel({Title = "Cara buka/tutup", Description = "ketuk tombol bulat atau tekan tombol keyboard. tombol minus di header mengecilkan window jadi header saja. tarik ke atas dari garis di bawah window untuk menutup."})
 	local cfg = tab:AddSection("Konfigurasi")
 	local nameIn = cfg:AddInput({Title = "Nama config", Placeholder = "default", Default = "default"})
 	local dd
@@ -1320,9 +1382,22 @@ function Window:BuildSettings()
 end
 
 function Window:_confirmClose()
-	self:Dialog({Title = "Tutup UI?", Content = "Window akan dihapus. Pengaturan yang belum disimpan hilang.",
-		Buttons = {{Title = "Batal"}, {Title = "Tutup", Primary = true, Callback = function() self:Destroy() end}}})
+	local function ask()
+		self:Dialog({Title = "Tutup UI?", Content = "Window akan dihapus. Pengaturan UI tetap tersimpan, config fitur yang belum disimpan hilang.",
+			Buttons = {{Title = "Batal"}, {Title = "Tutup", Primary = true, Callback = function() self:Destroy() end}}})
+	end
+	-- dialog tidak terlihat saat window diminimalkan, jadi dipulihkan dulu
+	if self.Minimized then
+		self:SetMinimized(false)
+		task.delay(.2, ask)
+	else
+		ask()
+	end
 end
+
+-- pengaturan sudah bawaan dan selalu ada (tombol gerigi di header). dua fungsi ini hanya untuk script lama / menambah isi.
+function Window:BuildSettings() return self.Settings end
+function Window:GetSettings() return self.Settings end
 
 -- ikon senja "tenggelam lalu terbit": turun sedikit dan mengecil, naik sambil membesar, lalu kembali normal.
 -- hanya properti Position dan UIScale yang dianimasikan, jadi ringan.
@@ -1378,9 +1453,21 @@ end
 
 function Senja:CreateWindow(o)
 	o = o or {}
-	if o.Theme then self:SetTheme(o.Theme) end
-	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, UserScale = 1, ToggleKey = o.ToggleKey or E.KeyCode.RightShift,
-		Home = UDim2.fromScale(.5, .5), _tok = 0, _tws = {}, DimT = .62, FabWanted = true}, Window)
+	-- pengaturan tersimpan dimuat dulu; kalau ada, mengalahkan nilai bawaan dari script
+	local P = loadPrefs()
+	Prefs = P
+	if P.theme and Themes[P.theme] then self:SetTheme(P.theme) elseif o.Theme then self:SetTheme(o.Theme) end
+	local ac = P.accent and fromHex(P.accent)
+	if ac then self:SetAccent(ac) end
+	if type(P.speed) == "number" then Senja.Speed = 100 / math.clamp(P.speed, 50, 200) end
+	local tkey = o.ToggleKey or E.KeyCode.RightShift
+	if type(P.key) == "string" then
+		local okk, kc = pcall(function() return E.KeyCode[P.key] end)
+		if okk and kc and kc ~= E.KeyCode.Unknown then tkey = kc end
+	end
+	local usc = type(P.scale) == "number" and math.clamp(P.scale, 70, 130) / 100 or 1
+	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, Minimized = false, Live = false, UserScale = usc, ToggleKey = tkey,
+		Home = UDim2.fromScale(.5, .5), _tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
 	local gui = new("ScreenGui", {Name = o.Name or "SenjaUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(gui)
 	local dim = new("Frame", {BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui})
@@ -1388,9 +1475,10 @@ function Senja:CreateWindow(o)
 	local sz = o.Size or Vector2.new(640, 440)
 	local root = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = win.Home,
 		Size = UDim2.fromOffset(math.min(sz.X, vp.X - 24), math.min(sz.Y, vp.Y - 24)), Parent = gui})
-	local scale = new("UIScale", {Scale = 1, Parent = root})
+	local scale = new("UIScale", {Scale = win.UserScale, Parent = root})
 	local main = new("Frame", {Size = UDim2.fromScale(1, 1), ClipsDescendants = true, Parent = root})
-	bind(main, "BackgroundColor3", "Bg") corner(main, 20) stroke(main, "Stroke", 1, 0)
+	bind(main, "BackgroundColor3", "Bg") stroke(main, "Stroke", 1, 0)
+	win.MainCorner = corner(main, 20)
 	win.Gui, win.Root, win.Scale, win.Main, win.Dim = gui, root, scale, main, dim
 
 	-- header
@@ -1405,7 +1493,8 @@ function Senja:CreateWindow(o)
 	local t2 = label(tl, o.Subtitle or ("v" .. Senja.Version), 11, "Sub")
 	t2.AutomaticSize, t2.Size = AX, UDim2.fromOffset(0, 14)
 
-	local function wbtn(ic, x, fn)
+	-- isOn (opsional): kalau mengembalikan true, tombol tetap tampak aktif saat kursor keluar
+	local function wbtn(ic, x, fn, isOn)
 		local b = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, .5),
 			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(28, 28), Parent = top})
 		bind(b, "BackgroundColor3", "Hover") corner(b, 14)
@@ -1413,19 +1502,34 @@ function Senja:CreateWindow(o)
 		local i = img(b, ic, 12, "Sub")
 		i.AnchorPoint, i.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
 		b.MouseEnter:Connect(function() tw(b, {BackgroundTransparency = 0}, .08) tw(i, {ImageColor3 = Cur.Text}, .08) end)
-		b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 1}, .12) tw(i, {ImageColor3 = Cur.Sub}, .12) tw(us, {Scale = 1}, .12) end)
+		b.MouseLeave:Connect(function()
+			local on = isOn and isOn()
+			tw(b, {BackgroundTransparency = on and 0 or 1}, .12)
+			tw(i, {ImageColor3 = on and Cur.Accent or Cur.Sub}, .12)
+			tw(us, {Scale = 1}, .12)
+		end)
 		b.MouseButton1Down:Connect(function() tw(us, {Scale = .9}, .05) end)
 		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1}, .14) end)
 		b.MouseButton1Click:Connect(fn)
+		return b, i
 	end
 	wbtn("x", -14, function() win:_confirmClose() end)
-	wbtn("minus", -46, function()
-		win:Toggle(false)
-		Senja:Notify({Title = "UI disembunyikan", Content = "ketuk tombol bulat atau tekan " .. win.ToggleKey.Name .. " untuk membuka lagi", Duration = 3})
-	end)
+	-- minus: kecilkan window jadi header saja (klik lagi untuk memulihkan)
+	local _, mic = wbtn("minus", -46, function() win:SetMinimized(not win.Minimized) end)
+	win.MinIcon = mic
+	-- gerigi: pengaturan tetap. klik untuk membuka, klik lagi untuk kembali ke tab sebelumnya
+	local gbtn, gic = wbtn("gear", -80, function()
+		if win.Current == win.Settings then
+			local back = win.LastTab or win.Tabs[1]
+			if back then win:Select(back) end
+		else
+			win:Select(win.Settings)
+		end
+	end, function() return win.Current == win.Settings end)
+	win.GearBtn, win.GearIc = gbtn, gic
 
 	-- pencarian: ikon kecil yang melebar saat diketuk
-	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -80, .5, 0), Size = UDim2.fromOffset(28, 28), ClipsDescendants = true, Parent = top})
+	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -112, .5, 0), Size = UDim2.fromOffset(28, 28), ClipsDescendants = true, Parent = top})
 	bind(sbox, "BackgroundColor3", "Hover") corner(sbox, 14)
 	local si = img(sbox, "search", 12, "Sub")
 	si.AnchorPoint, si.Position = Vector2.new(0, .5), UDim2.new(0, 8, .5, 0)
@@ -1514,6 +1618,7 @@ function Senja:CreateWindow(o)
 	win.GrabFx = {pill = gp}
 	grab.MouseEnter:Connect(function() tw(gp, {Size = UDim2.fromOffset(52, 3), BackgroundTransparency = .1}, .1) end)
 	grab.MouseLeave:Connect(function() tw(gp, {Size = UDim2.fromOffset(34, 3), BackgroundTransparency = .55}, .12) end)
+	win.Grab = grab
 	swipeClose(win, grab)
 
 	-- tombol bulat melayang: ketuk = buka/tutup UI, seret = pindah (menempel ke sisi layar saat dilepas)
@@ -1564,6 +1669,25 @@ function Senja:CreateWindow(o)
 		end
 	end)
 
+	-- pengaturan tetap: halaman bawaan yang dibuka lewat tombol gerigi di header, bukan lewat bilah tab
+	local st = win:_newPage()
+	st.IsSettings, st.Index = true, 1e6
+	st._paint = function(sel, inst)
+		local t = inst and 0 or .12
+		tw(win.GearBtn, {BackgroundTransparency = sel and 0 or 1}, t)
+		tw(win.GearIc, {ImageColor3 = sel and Cur.Accent or Cur.Sub}, t)
+	end
+	Hooks[#Hooks + 1] = function() st._paint(win.Current == st, true) end
+	win.Settings = st
+	win:_buildSettings(st)
+	-- tema / aksen yang berubah (dari mana pun) ikut tersimpan
+	Senja:OnTheme(function()
+		if not win.Live then return end
+		pref("theme", CurName)
+		pref("accent", AccentOverride and toHex(AccentOverride) or nil)
+	end)
+	win.Live = true
+
 	table.insert(Senja.Windows, win)
 	local _, cy = win:_px()
 	win:_at(cy)
@@ -1581,7 +1705,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 2.2",
+	Subtitle = "build 2.3",
 	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
@@ -1624,7 +1748,7 @@ t:AddKeybind({Title = "Aktifkan aim", Default = Enum.KeyCode.E, Mode = "Toggle",
 local v = Visual:AddSection("Warna")
 v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
 
-Win:BuildSettings()   -- tab tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk
+-- pengaturan (tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk) sudah bawaan: tombol gerigi di header
 
-Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.2", Type = "success", Duration = 4})
+Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.3", Type = "success", Duration = 4})
 Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
