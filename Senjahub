@@ -532,16 +532,6 @@ function Box:_row(o, cw, wantHit)
 		d.TextWrapped, d.AutomaticSize, d.Size = true, AY, UDim2.new(1, 0, 0, 0)
 	end
 	local hit
-	if wantHit then
-		hit = new("TextButton", {BackgroundTransparency = 1, Text = "", Position = UDim2.fromOffset(-15, -12), Size = UDim2.new(1, 30, 1, 24), ZIndex = 5, Parent = h})
-		hit.MouseEnter:Connect(function() tw(h, {BackgroundColor3 = Cur.Hover}, .1) end)
-		hit.MouseLeave:Connect(function()
-			tw(h, {BackgroundColor3 = Cur.Surface}, .14)
-			tw(us, {Scale = 1}, .14)
-		end)
-		hit.MouseButton1Down:Connect(function() tw(us, {Scale = .975}, .06) end)
-		hit.MouseButton1Up:Connect(function() tw(us, {Scale = 1}, .16) end)
-	end
 	table.insert(self.Tab.Items, {holder = h, title = o.Title or "", box = self})
 	return {h = h, row = row, box = box, col = col, hit = hit, title = t, desc = d, us = us}
 end
@@ -567,11 +557,17 @@ function Box:AddButton(o)
 	bind(pill, "BackgroundColor3", "Hover") corner(pill, 13)
 	local ic = img(pill, o.Icon or "play", 12, "Sub")
 	ic.AnchorPoint, ic.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
-	c.hit.MouseEnter:Connect(function()
+	local ps = new("UIScale", {Parent = pill})
+	local hit = new("TextButton", {BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0),
+		Size = UDim2.fromOffset(26, 26), ZIndex = 5, Parent = c.row})
+	hit.MouseButton1Down:Connect(function() tw(ps, {Scale = .88}, .06) end)
+	hit.MouseButton1Up:Connect(function() tw(ps, {Scale = 1}, .14) end)
+	hit.MouseEnter:Connect(function()
 		tw(pill, {BackgroundColor3 = Cur.Accent}, .1)
 		tw(ic, {ImageColor3 = Cur.OnAccent}, .1)
 	end)
-	c.hit.MouseLeave:Connect(function()
+	hit.MouseLeave:Connect(function()
+		tw(ps, {Scale = 1}, .12)
 		tw(pill, {BackgroundColor3 = Cur.Hover}, .14)
 		tw(ic, {ImageColor3 = Cur.Sub}, .14)
 	end)
@@ -582,7 +578,7 @@ function Box:AddButton(o)
 		safe(o.Callback)
 	end
 	function obj:SetTitle(t) c.title.Text = t end
-	c.hit.MouseButton1Click:Connect(function() obj:Fire() end)
+	hit.MouseButton1Click:Connect(function() obj:Fire() end)
 	return obj
 end
 
@@ -594,6 +590,8 @@ function Box:AddToggle(o)
 	bind(track, "BackgroundColor3", "Track") corner(track, 11)
 	local knob = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 3, .5, 0), Size = UDim2.fromOffset(16, 16), Parent = track})
 	bind(knob, "BackgroundColor3", "Sub") corner(knob, 8)
+	local hit = new("TextButton", {BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 2, .5, 0),
+		Size = UDim2.fromOffset(44, 28), ZIndex = 5, Parent = c.row})
 	local function paint(inst)
 		local t = inst and 0 or .16
 		local w = pressed and 21 or 16
@@ -608,10 +606,10 @@ function Box:AddToggle(o)
 	end
 	function obj:Get() return self.Value end
 	function obj:Serialize() return self.Value end
-	c.hit.MouseButton1Down:Connect(function() pressed = true paint() end)
-	c.hit.MouseButton1Up:Connect(function() pressed = false paint() end)
-	c.hit.MouseLeave:Connect(function() if pressed then pressed = false paint() end end)
-	c.hit.MouseButton1Click:Connect(function() obj:Set(not obj.Value) end)
+	hit.MouseButton1Down:Connect(function() pressed = true paint() end)
+	hit.MouseButton1Up:Connect(function() pressed = false paint() end)
+	hit.MouseLeave:Connect(function() if pressed then pressed = false paint() end end)
+	hit.MouseButton1Click:Connect(function() obj:Set(not obj.Value) end)
 	Hooks[#Hooks + 1] = function() paint() end
 	obj.Value = o.Default and true or false
 	paint(true)
@@ -1326,6 +1324,30 @@ function Window:_confirmClose()
 		Buttons = {{Title = "Batal"}, {Title = "Tutup", Primary = true, Callback = function() self:Destroy() end}}})
 end
 
+-- ikon senja "tenggelam lalu terbit": turun sedikit dan mengecil, naik sambil membesar, lalu kembali normal.
+-- hanya properti Position dan UIScale yang dianimasikan, jadi ringan.
+local breathing = {}
+local function breathe(ic, us)
+	if breathing[ic] or not ic.Parent then return end
+	breathing[ic] = true
+	local home = ic.Position
+	local function at(dy) return UDim2.new(home.X.Scale, home.X.Offset, home.Y.Scale, home.Y.Offset + dy) end
+	local IO = E.EasingDirection.InOut
+	task.spawn(function()
+		tw(ic, {Position = at(4)}, .3, Sine, IO)
+		tw(us, {Scale = .86}, .3, Sine, IO).Completed:Wait()
+		if ic.Parent then
+			tw(ic, {Position = at(-3)}, .34, Qn)
+			tw(us, {Scale = 1.22}, .34, Qn).Completed:Wait()
+		end
+		if ic.Parent then
+			tw(ic, {Position = home}, .4, Sine, IO)
+			tw(us, {Scale = 1}, .4, Sine, IO).Completed:Wait()
+		end
+		breathing[ic] = nil
+	end)
+end
+
 -- gestur tarik ke atas dari garis di bawah window untuk menutup.
 -- window ikut jari/kursor; lepas setelah cukup jauh atau cukup cepat -> tertutup, kalau tidak -> kembali.
 local function swipeClose(win, zone)
@@ -1374,7 +1396,8 @@ function Senja:CreateWindow(o)
 	-- header
 	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), Parent = main})
 	local logo = img(top, o.Icon or "logo", 20, "Accent")
-	logo.AnchorPoint, logo.Position = Vector2.new(0, .5), UDim2.new(0, 18, .5, 0)
+	logo.AnchorPoint, logo.Position = Vector2.new(.5, .5), UDim2.new(0, 28, .5, 0)
+	local logos = new("UIScale", {Parent = logo})
 	local tl = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(46, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = top})
 	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center, Padding = UDim.new(0, 8), Parent = tl})
 	local t1 = label(tl, o.Title or "Senja", 15, "Text", E.FontWeight.Bold)
@@ -1501,6 +1524,7 @@ function Senja:CreateWindow(o)
 	local fus = new("UIScale", {Parent = fab})
 	local fic = img(fab, o.Icon or "logo", 22, "Accent")
 	fic.AnchorPoint, fic.Position, fic.ZIndex = Vector2.new(.5, .5), UDim2.fromScale(.5, .5), 61
+	local fics = new("UIScale", {Parent = fic})
 	win.Fab, win.FabStroke, win.FabScale = fab, fst, fus
 	local fd = false
 	fab.MouseEnter:Connect(function() if not fd then tw(fus, {Scale = win.Open and .92 or 1.08}, .1) end end)
@@ -1529,6 +1553,15 @@ function Senja:CreateWindow(o)
 
 	win:_c(UIS.InputBegan, function(i, gpd)
 		if not gpd and i.KeyCode == win.ToggleKey then win:Toggle() end
+	end)
+
+	-- tiap 10 detik: ikon di header (saat UI terbuka) dan di tombol bulat (saat terlihat) bergerak bersamaan
+	task.spawn(function()
+		while gui.Parent do
+			task.wait(10)
+			if win.Open then breathe(logo, logos) end
+			if fab.Visible then breathe(fic, fics) end
+		end
 	end)
 
 	table.insert(Senja.Windows, win)
