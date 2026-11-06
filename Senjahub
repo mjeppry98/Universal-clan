@@ -1076,6 +1076,8 @@ function Box:AddSection(o)
 		if open then
 			content.AutomaticSize = AY
 			content.Size = UDim2.new(1, 0, 0, 0)
+			-- saat terbuka dan diam tidak perlu memotong isi, jadi tidak ada area klik yang ikut terpotong
+			content.ClipsDescendants = false
 		end
 	end
 	if open then settle() end
@@ -1096,6 +1098,7 @@ function Box:AddSection(o)
 		local from = content.AbsoluteSize.Y / s
 		local to = open and math.max(group.AbsoluteSize.Y, cl.AbsoluteContentSize.Y) / s or 0
 		content.AutomaticSize = E.AutomaticSize.None
+		content.ClipsDescendants = true
 		content.Size = UDim2.new(1, 0, 0, from)
 		local mine = tw(content, {Size = UDim2.new(1, 0, 0, to)}, .2)
 		secTw = mine
@@ -1739,7 +1742,7 @@ function Senja:CreateWindow(o)
 	end
 	local usc = type(P.scale) == "number" and math.clamp(P.scale, 70, 130) / 100 or 1
 	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, Minimized = false, Live = false, UserScale = usc, ToggleKey = tkey,
-		Home = UDim2.new(.5, type(P.wx) == "number" and P.wx or 0, .5, type(P.wy) == "number" and P.wy or 0),
+		Home = UDim2.fromScale(.5, .5),   -- selalu muncul di tengah layar saat load (posisi geseran tidak diingat)
 		_tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
 	local gui = new("ScreenGui", {Name = o.Name or "SenjaUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(gui)
@@ -1889,7 +1892,6 @@ function Senja:CreateWindow(o)
 			root.Position = win.Home
 		end, function()
 			win:_clamp()
-			if win.Live then pref("wx", win.Home.X.Offset) pref("wy", win.Home.Y.Offset) end
 		end)
 	end)
 
@@ -2061,6 +2063,3 @@ v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), F
 -- pengaturan (tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk) sudah bawaan: tombol gerigi di header
 
 Win:AutoLoad()   -- muat config otomatis (kalau diaktifkan di Pengaturan). taruh di akhir, setelah semua elemen dibuat
-
-Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.5", Type = "success", Duration = 4})
-Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
