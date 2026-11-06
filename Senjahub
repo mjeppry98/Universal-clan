@@ -1,8 +1,30 @@
 -- Senja Hub 2.4 | paste & execute langsung di executor (library + contoh jadi satu)
+--
+-- API ringkas
+--   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon})
+--   local tab = Win:AddTab({Title, Icon})         local sec = tab:AddSection({Title, Open})
+--   sec:AddToggle / AddSlider / AddButton / AddInput / AddDropdown / AddKeybind / AddColorPicker / AddLabel / AddDivider
+--   opsi umum: Title, Description, Flag (dipakai config), Default, Callback
+--   semua elemen: :Set() :Get() :SetTitle() :SetDescription() :SetVisible() :SetEnabled() :Destroy()
+--   dropdown: :Refresh(daftar) :Close()      slider: Min Max Increment Suffix
+--   Win:Show() Hide() Toggle() Minimize()    Win:SelectTab(nama|nomor)    Win:SetTitle() SetSubtitle()
+--   Win:Confirm(judul, isi, bilaYa)          Win:Dialog({Title, Content, Buttons})
+--   Win:AutoLoad()   panggil di AKHIR script: memuat config yang dipilih di Pengaturan (Muat & simpan otomatis)
+--   Win:GetSettings()  halaman pengaturan bawaan (bisa ditambah section sendiri)
+--   Senja:Notify({Title, Content, Type = "info|success|warn|error", Duration, Callback})
+--   Senja:ClearNotifications()   Senja:SetTheme(nama)   Senja:SetAccent(Color3)   Senja:Destroy()
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
 local Senja = {Version = "2.4.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+
+-- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
+do
+	local genv = (getgenv and getgenv()) or _G
+	local old = genv.__SenjaLib
+	if old and old ~= Senja and old.Destroy then pcall(function() old:Destroy() end) end
+	genv.__SenjaLib = Senja
+end
 
 local cr = cloneref or function(x) return x end
 local TweenService = cr(game:GetService("TweenService"))
@@ -22,37 +44,23 @@ local AY, AX = E.AutomaticSize.Y, E.AutomaticSize.X
 local C3 = Color3.fromRGB
 local WHITE, BLACK = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
 
--- ukuran tetap: header, bilah tab, footer (piksel)
-local HEAD, NAVH, FOOT = 44, 34, 34
-
------------------------------------------------------------- tema
--- abu-abu netral yang dicampur sedikit warna (tint), supaya tiap tema punya "suhu" sendiri
--- dan bukan sekadar hitam dengan satu warna aksen.
-local function mk(acc, on, tint, tc)
-	tint, tc = tint or .035, tc or acc
-	local function n(v) return C3(v, v, v):Lerp(tc, tint) end
-	return {Bg = n(10), Side = n(15), Surface = n(20), Hover = n(30), Track = n(52), Stroke = n(34), StrokeHi = n(60),
-		Text = C3(238, 236, 233), Sub = C3(132, 132, 136):Lerp(tc, tint * 2), Accent = acc, OnAccent = on or C3(12, 12, 12)}
+------------------------------------------------------------ tema (semuanya berlatar hitam, beda di warna aksen)
+local function mk(acc, on)
+	return {Bg = C3(0, 0, 0), Side = C3(13, 13, 13), Surface = C3(17, 17, 17), Hover = C3(28, 28, 28), Track = C3(48, 48, 48),
+		Stroke = C3(30, 30, 30), Text = C3(242, 242, 242), Sub = C3(128, 128, 128), Accent = acc, OnAccent = on or C3(0, 0, 0)}
 end
-
-local Hitam = mk(C3(236, 236, 236), nil, 0)
-Hitam.Bg, Hitam.Side, Hitam.Surface = C3(3, 3, 3), C3(10, 10, 10), C3(15, 15, 15)
-
 local Themes = {
-	Senja  = mk(C3(244, 138, 100), nil, .055, C3(130, 70, 170)),
-	Hitam  = Hitam,
-	Jingga = mk(C3(255, 128, 52)),
-	Biru   = mk(C3(82, 150, 255)),
-	Hijau  = mk(C3(78, 208, 128)),
-	Ungu   = mk(C3(168, 128, 255)),
-	Merah  = mk(C3(255, 86, 94), C3(24, 0, 4)),
-	Mawar  = mk(C3(255, 112, 168)),
-	Aqua   = mk(C3(56, 208, 200)),
-	Salju  = {Bg = C3(246, 245, 243), Side = C3(238, 237, 234), Surface = C3(255, 255, 255), Hover = C3(240, 239, 236), Track = C3(210, 208, 204),
-		Stroke = C3(226, 224, 220), StrokeHi = C3(196, 194, 189), Text = C3(28, 27, 30), Sub = C3(118, 116, 121), Accent = C3(214, 92, 38), OnAccent = WHITE},
+	Hitam  = mk(C3(240, 240, 240)),
+	Jingga = mk(C3(255, 138, 61)),
+	Biru   = mk(C3(76, 148, 255)),
+	Hijau  = mk(C3(72, 214, 128)),
+	Ungu   = mk(C3(164, 124, 255)),
+	Merah  = mk(C3(255, 84, 92), C3(20, 0, 2)),
+	Mawar  = mk(C3(255, 104, 164)),
+	Aqua   = mk(C3(52, 214, 206)),
 }
-local Order = {"Senja", "Hitam", "Jingga", "Biru", "Hijau", "Ungu", "Merah", "Mawar", "Aqua", "Salju"}
-local CurName, Cur = "Senja", Themes.Senja
+local Order = {"Hitam", "Jingga", "Biru", "Hijau", "Ungu", "Merah", "Mawar", "Aqua"}
+local CurName, Cur = "Hitam", Themes.Hitam
 local Reg, Hooks = {}, {}
 
 -- semua animasi lewat sini. BASE memperpendek semua durasi; Senja.Speed < 1 = lebih cepat lagi
@@ -82,7 +90,6 @@ local function applyTheme(tbl, name)
 end
 function Senja:AddTheme(name, t)
 	if not Themes[name] then Order[#Order + 1] = name end
-	t.StrokeHi = t.StrokeHi or t.Track
 	Themes[name] = t
 end
 function Senja:GetThemes() local n = {} for i, k in ipairs(Order) do n[i] = k end return n end
@@ -97,7 +104,7 @@ function Senja:SetAccent(c)
 	local t = {}
 	for k, v in pairs(Themes[CurName]) do t[k] = v end
 	t.Accent = c
-	t.OnAccent = lum(c) > .55 and C3(12, 12, 12) or WHITE
+	t.OnAccent = lum(c) > .55 and C3(0, 0, 0) or WHITE
 	AccentOverride = c
 	applyTheme(t, CurName)
 end
@@ -122,8 +129,6 @@ local function pad(o, l, t, r, b)
 	return new("UIPadding", {PaddingLeft = UDim.new(0, l), PaddingTop = UDim.new(0, t), PaddingRight = UDim.new(0, r or l), PaddingBottom = UDim.new(0, b or t), Parent = o})
 end
 local function font(w) return Font.new("rbxasset://fonts/families/Inter.json", w or E.FontWeight.Medium) end
--- angka (nilai slider, hex, nama tombol) pakai font mono biar lebarnya stabil saat berubah
-local function mono() return Font.fromEnum(E.Font.RobotoMono) end
 local function label(p, t, sz, key, w)
 	local l = new("TextLabel", {BackgroundTransparency = 1, Text = t or "", TextSize = sz or 13, FontFace = font(w),
 		TextXAlignment = E.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, (sz or 13) + 4), Parent = p})
@@ -329,14 +334,13 @@ local function asset(name, make)
 	return ""
 end
 
--- garis ikon dibuat sedikit lebih tipis dari 2.3 (4.8 vs 5.4); prefix v2 supaya cache lama tidak terpakai
 function Senja.Icon(n)
 	if type(n) == "number" then return "rbxassetid://" .. n end
 	if type(n) ~= "string" or n == "" then return "" end
 	if n:find("rbxasset") or n:find("^http") then return n end
 	local f = Draw[n]
 	if not f then return "" end
-	return asset("v2_" .. n, function() return render(f(), 64, 4.8) end)
+	return asset("v1_" .. n, function() return render(f(), 64, 5.4) end)
 end
 function Senja:AddIcon(name, fn) Draw[name] = fn end
 
@@ -362,12 +366,12 @@ local function dragger(win, frame, fn, onStart, onEnd)
 end
 
 ------------------------------------------------------------ notifikasi
--- kartu rata dengan kotak ikon bernuansa jenisnya di kiri, judul dan isi di kanan.
+-- notifikasi: kartu bulat dengan ikon besar di kiri (kotak tipis bernuansa warna jenisnya) lalu judul dan isi di kanan.
 -- tanpa garis warna dan tanpa progress bar. pesan yang sama berturut-turut digabung dengan penghitung kecil.
 -- ketuk = tutup, seret ke kanan = singkirkan. waktu berhenti saat disorot atau diseret. maksimal 5.
 -- satu loop Heartbeat dipakai bersama semua notifikasi dan mati sendiri kalau tidak ada yang aktif.
 local notifHolder, notifN, notifActive, notifConn = nil, 0, {}, nil
-local KindCol = {success = C3(92, 198, 128), warn = C3(232, 176, 72), error = C3(236, 94, 100)}
+local KindCol = {success = C3(98, 200, 130), warn = C3(236, 184, 80), error = C3(236, 98, 104)}
 local KindIcon = {success = "check", warn = "warn", error = "x", info = "info"}
 local KindGlyph = {success = "✓", warn = "!", error = "×", info = "i"}
 local OFF = 310
@@ -431,33 +435,33 @@ function Senja:Notify(o)
 		local wrap = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = notifN, Parent = hold})
 		local card = new("Frame", {Active = true, BackgroundColor3 = Cur.Surface, Position = UDim2.fromOffset(OFF, 0),
 			Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = wrap})
-		corner(card, 8)
-		new("UIStroke", {Color = Cur.StrokeHi, Thickness = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = card})
-		pad(card, 10, 10, 12, 10)
+		corner(card, 14)
+		new("UIStroke", {Color = Cur.Stroke, Thickness = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = card})
+		pad(card, 12, 12, 14, 12)
 
 		local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
 
-		-- kotak ikon
-		local badge = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .84, Size = UDim2.fromOffset(30, 30), Parent = row})
-		corner(badge, 7)
+		-- ikon besar
+		local badge = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .86, Size = UDim2.fromOffset(40, 40), Parent = row})
+		corner(badge, 12)
 		local bs = new("UIScale", {Scale = .7, Parent = badge})
-		local src = Senja.Icon(o.Icon or KindIcon[kind] or "info")
+		local src = Senja.Icon(KindIcon[kind] or "info")
 		if src ~= "" then
 			new("ImageLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-				Size = UDim2.fromOffset(16, 16), Image = src, ImageColor3 = col, Parent = badge})
+				Size = UDim2.fromOffset(22, 22), Image = src, ImageColor3 = col, Parent = badge})
 		else
-			new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = KindGlyph[kind] or "i", TextSize = 16,
+			new("TextLabel", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = KindGlyph[kind] or "i", TextSize = 22,
 				FontFace = font(E.FontWeight.Bold), TextColor3 = col, Parent = badge})
 		end
 
-		-- teks (tinggi minimal 30 = tinggi ikon, isinya di tengah kalau cuma satu baris)
-		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(40, 0), Size = UDim2.new(1, -66, 0, 30), AutomaticSize = AY, Parent = row})
-		new("UIListLayout", {Padding = UDim.new(0, 1), SortOrder = E.SortOrder.LayoutOrder, VerticalAlignment = E.VerticalAlignment.Center, Parent = inner})
+		-- teks (tinggi minimal 40 = tinggi ikon, isinya di tengah kalau cuma satu baris)
+		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(52, 0), Size = UDim2.new(1, -78, 0, 40), AutomaticSize = AY, Parent = row})
+		new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, VerticalAlignment = E.VerticalAlignment.Center, Parent = inner})
 		tlabel(inner, title, 13, Cur.Text, E.FontWeight.SemiBold, 1)
 		if body then tlabel(inner, body, 12, Cur.Sub, E.FontWeight.Medium, 2) end
 
-		local cnt = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 1), Size = UDim2.fromOffset(24, 14),
-			Text = "", TextSize = 11, FontFace = mono(), TextColor3 = Cur.Sub, TextXAlignment = E.TextXAlignment.Right, Visible = false, Parent = row})
+		local cnt = new("TextLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(24, 14),
+			Text = "", TextSize = 11, FontFace = font(E.FontWeight.SemiBold), TextColor3 = Cur.Sub, TextXAlignment = E.TextXAlignment.Right, Visible = false, Parent = row})
 
 		local e = {key = key, card = card, cnt = cnt, count = 1, left = dur, closed = false, drag = false, hover = false}
 		notifActive[#notifActive + 1] = e
@@ -519,8 +523,15 @@ function Senja:Notify(o)
 	end)
 end
 
+function Senja:ClearNotifications()
+	for i = #notifActive, 1, -1 do
+		local e = notifActive[i]
+		if e and e.close then task.spawn(e.close) end
+	end
+end
+
 ------------------------------------------------------------ container elemen
--- setiap elemen berupa kartu sendiri dengan garis tepi tipis; border menyala sedikit saat disorot.
+-- setiap elemen berupa kartu bulat sendiri (tanpa garis tepi), jarak antar kartu kecil.
 -- section hanya judul kecil yang bisa dilipat; kartu di dalamnya ikut terlipat.
 local Box = {}
 Box.__index = Box
@@ -531,15 +542,68 @@ function Box:_lock(on)
 	local s = self.Tab and self.Tab.Scroll
 	if s then s.ScrollingEnabled = not on end
 end
-local function reg(o, obj) if o.Flag then Senja.Flags[o.Flag] = obj end return obj end
+local lastRow
+local openDD
+-- metode umum untuk semua elemen: SetTitle, SetDescription, SetVisible, SetEnabled, Destroy
+local function deco(obj, c)
+	if not c then return obj end
+	local win, item = c.owner.Win, c.item
+	obj.Holder = c.h
+	if not obj.SetTitle then
+		function obj:SetTitle(t)
+			c.title.Text = tostring(t)
+			item.title = tostring(t)
+		end
+	end
+	function obj:SetDescription(t)
+		t = t and tostring(t) or ""
+		item.desc = t
+		if c.desc then
+			c.desc.Text = t
+			c.desc.Visible = t ~= ""
+		elseif t ~= "" then
+			local d = label(c.box, t, 11, "Sub")
+			d.TextWrapped, d.AutomaticSize, d.Size = true, AY, UDim2.new(1, 0, 0, 0)
+			c.desc = d
+		end
+	end
+	function obj:SetVisible(v)
+		item.hidden = not v
+		if win.Current == c.owner.Tab then win:_filter(win.SearchBox.Text) else c.h.Visible = v and true or false end
+	end
+	local blk
+	function obj:SetEnabled(v)
+		v = v ~= false
+		if not blk then
+			if v then return end
+			blk = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = .4, Position = UDim2.fromOffset(-15, -12),
+				Size = UDim2.new(1, 30, 1, 24), ZIndex = 30, Parent = c.h})
+			bind(blk, "BackgroundColor3", "Surface")
+			corner(blk, 14)
+		end
+		blk.Visible = not v
+	end
+	function obj:Destroy()
+		local items = c.owner.Tab.Items
+		local i = table.find(items, item)
+		if i then table.remove(items, i) end
+		if c.flag and Senja.Flags[c.flag] == obj then Senja.Flags[c.flag] = nil end
+		c.h:Destroy()
+	end
+	return obj
+end
+local function reg(o, obj)
+	if o.Flag then
+		Senja.Flags[o.Flag] = obj
+		if lastRow then lastRow.flag = o.Flag end
+	end
+	return deco(obj, lastRow)
+end
 
 function Box:_row(o, cw, wantHit)
 	local n = self:_n()
 	local h = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = n, Parent = self.Body})
-	bind(h, "BackgroundColor3", "Surface") corner(h, 8) pad(h, 12, 10, 12, 10)
-	local st = stroke(h, "Stroke", 1, 0)
-	h.MouseEnter:Connect(function() tw(st, {Color = Cur.StrokeHi}, .1) end)
-	h.MouseLeave:Connect(function() tw(st, {Color = Cur.Stroke}, .16) end)
+	bind(h, "BackgroundColor3", "Surface") corner(h, 14) pad(h, 15, 12, 15, 12)
 	local us = new("UIScale", {Parent = h})
 	local col = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = h})
 	new("UIListLayout", {SortOrder = E.SortOrder.LayoutOrder, Parent = col})
@@ -552,18 +616,17 @@ function Box:_row(o, cw, wantHit)
 		d = label(box, o.Description, 11, "Sub")
 		d.TextWrapped, d.AutomaticSize, d.Size = true, AY, UDim2.new(1, 0, 0, 0)
 	end
-	local hit
-	table.insert(self.Tab.Items, {holder = h, title = o.Title or "", box = self})
-	return {h = h, row = row, box = box, col = col, hit = hit, title = t, desc = d, us = us}
+	local item = {holder = h, title = o.Title or "", desc = o.Description, box = self, hidden = false}
+	table.insert(self.Tab.Items, item)
+	local c = {h = h, row = row, box = box, col = col, title = t, desc = d, us = us, item = item, owner = self}
+	lastRow = c
+	return c
 end
 
 function Box:AddLabel(o)
 	if type(o) == "string" then o = {Title = o} end
 	local c = self:_row(o, 0)
-	return {
-		SetTitle = function(_, t) c.title.Text = t end,
-		SetDescription = function(_, t) if c.desc then c.desc.Text = t end end,
-	}
+	return deco({}, c)
 end
 Box.AddParagraph = Box.AddLabel
 
@@ -574,14 +637,14 @@ end
 
 function Box:AddButton(o)
 	local c = self:_row(o, 30, true)
-	local pill = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(30, 24), Parent = c.row})
-	bind(pill, "BackgroundColor3", "Hover") corner(pill, 6)
+	local pill = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = c.row})
+	bind(pill, "BackgroundColor3", "Hover") corner(pill, 13)
 	local ic = img(pill, o.Icon or "play", 12, "Sub")
 	ic.AnchorPoint, ic.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
 	local ps = new("UIScale", {Parent = pill})
 	local hit = new("TextButton", {BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0),
-		Size = UDim2.fromOffset(30, 24), ZIndex = 5, Parent = c.row})
-	hit.MouseButton1Down:Connect(function() tw(ps, {Scale = .9}, .06) end)
+		Size = UDim2.fromOffset(26, 26), ZIndex = 5, Parent = c.row})
+	hit.MouseButton1Down:Connect(function() tw(ps, {Scale = .88}, .06) end)
 	hit.MouseButton1Up:Connect(function() tw(ps, {Scale = 1}, .14) end)
 	hit.MouseEnter:Connect(function()
 		tw(pill, {BackgroundColor3 = Cur.Accent}, .1)
@@ -594,30 +657,30 @@ function Box:AddButton(o)
 	end)
 	local obj = {}
 	function obj:Fire()
-		pill.Size = UDim2.fromOffset(26, 20)
-		tw(pill, {Size = UDim2.fromOffset(30, 24)}, .2)
+		pill.Size = UDim2.fromOffset(21, 21)
+		tw(pill, {Size = UDim2.fromOffset(26, 26)}, .2)
 		safe(o.Callback)
 	end
 	function obj:SetTitle(t) c.title.Text = t end
 	hit.MouseButton1Click:Connect(function() obj:Fire() end)
-	return obj
+	return deco(obj, c)
 end
 
 function Box:AddToggle(o)
-	local c = self:_row(o, 36, true)
+	local c = self:_row(o, 46, true)
 	local obj = {Type = "Toggle", Value = false}
 	local pressed = false
-	local track = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(36, 20), Parent = c.row})
-	bind(track, "BackgroundColor3", "Track") corner(track, 10)
-	local knob = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 3, .5, 0), Size = UDim2.fromOffset(14, 14), Parent = track})
-	bind(knob, "BackgroundColor3", "Sub") corner(knob, 7)
+	local track = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(40, 22), Parent = c.row})
+	bind(track, "BackgroundColor3", "Track") corner(track, 11)
+	local knob = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 3, .5, 0), Size = UDim2.fromOffset(16, 16), Parent = track})
+	bind(knob, "BackgroundColor3", "Sub") corner(knob, 8)
 	local hit = new("TextButton", {BackgroundTransparency = 1, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 2, .5, 0),
-		Size = UDim2.fromOffset(40, 26), ZIndex = 5, Parent = c.row})
+		Size = UDim2.fromOffset(44, 28), ZIndex = 5, Parent = c.row})
 	local function paint(inst)
 		local t = inst and 0 or .16
-		local w = pressed and 18 or 14
+		local w = pressed and 21 or 16
 		tw(track, {BackgroundColor3 = obj.Value and Cur.Accent or Cur.Track}, inst and 0 or .14)
-		tw(knob, {Size = UDim2.fromOffset(w, 14), Position = UDim2.new(0, obj.Value and (33 - w) or 3, .5, 0),
+		tw(knob, {Size = UDim2.fromOffset(w, 16), Position = UDim2.new(0, obj.Value and (37 - w) or 3, .5, 0),
 			BackgroundColor3 = obj.Value and Cur.OnAccent or Cur.Sub}, t, Qn)
 	end
 	function obj:Set(v, silent)
@@ -639,36 +702,33 @@ function Box:AddToggle(o)
 end
 
 function Box:AddSlider(o)
-	local c = self:_row(o, 56)
+	local c = self:_row(o, 64)
 	local mn, mx, inc = o.Min or 0, o.Max or 100, o.Increment or 1
 	local obj = {Type = "Slider", Value = mn}
-	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(56, 22), Text = "",
-		ClearTextOnFocus = false, TextSize = 11, FontFace = mono(), Parent = c.row})
-	bind(vb, "BackgroundColor3", "Bg") bind(vb, "TextColor3", "Text") corner(vb, 6)
-	local vst = stroke(vb, "Stroke", 1, 0)
-	vb.Focused:Connect(function() tw(vst, {Color = Cur.Accent}, .1) end)
-	vb.FocusLost:Connect(function() tw(vst, {Color = Cur.Stroke}, .14) end)
+	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(58, 24), Text = "",
+		ClearTextOnFocus = false, TextSize = 12, FontFace = font(E.FontWeight.SemiBold), Parent = c.row})
+	bind(vb, "BackgroundColor3", "Bg") bind(vb, "TextColor3", "Text") corner(vb, 12)
 	local barh = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 2, Active = true, Parent = c.col})
-	local track = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, 0, 17), Size = UDim2.new(1, 0, 0, 4), Parent = barh})
-	bind(track, "BackgroundColor3", "Track") corner(track, 2)
+	local track = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, 0, 17), Size = UDim2.new(1, 0, 0, 6), Parent = barh})
+	bind(track, "BackgroundColor3", "Track") corner(track, 3)
 	local fill = new("Frame", {Size = UDim2.fromScale(0, 1), Parent = track})
-	bind(fill, "BackgroundColor3", "Accent") corner(fill, 2)
-	local knob = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(1, .5), Size = UDim2.fromOffset(12, 12), Parent = fill})
-	bind(knob, "BackgroundColor3", "Text") corner(knob, 6)
-	local bub = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(0, 0, 0, 6), Size = UDim2.fromOffset(46, 18), Parent = barh})
-	bind(bub, "BackgroundColor3", "Accent") corner(bub, 5)
+	bind(fill, "BackgroundColor3", "Accent") corner(fill, 3)
+	local knob = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(1, .5), Size = UDim2.fromOffset(14, 14), Parent = fill})
+	bind(knob, "BackgroundColor3", "Text") corner(knob, 7)
+	local bub = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(0, 0, 0, 7), Size = UDim2.fromOffset(48, 20), Parent = barh})
+	bind(bub, "BackgroundColor3", "Accent") corner(bub, 10)
 	bub.BackgroundTransparency = 1
 	local bl = label(bub, "", 11, "OnAccent", E.FontWeight.SemiBold)
-	bl.FontFace = mono()
 	bl.Size, bl.TextXAlignment, bl.TextTransparency = UDim2.fromScale(1, 1), E.TextXAlignment.Center, 1
 	local function showBub(on)
 		tw(bub, {BackgroundTransparency = on and 0 or 1}, .1)
 		tw(bl, {TextTransparency = on and 0 or 1}, .1)
-		tw(knob, {Size = UDim2.fromOffset(on and 16 or 12, on and 16 or 12)}, .14)
+		tw(knob, {Size = UDim2.fromOffset(on and 20 or 14, on and 20 or 14)}, .14)
 	end
 	-- instant = true dipakai saat digeser: langsung ikut jari tanpa tween, dan tidak jalan kalau nilainya sama
 	function obj:Set(v, silent, instant)
 		v = math.clamp(math.floor(((tonumber(v) or mn) - mn) / inc + .5) * inc + mn, mn, mx)
+		v = math.floor(v * 10000 + .5) / 10000
 		if instant and v == self.Value then return end
 		self.Value = v
 		local r = mx > mn and (v - mn) / (mx - mn) or 0
@@ -676,10 +736,10 @@ function Box:AddSlider(o)
 		vb.Text, bl.Text = txt, txt
 		if instant then
 			fill.Size = UDim2.fromScale(r, 1)
-			bub.Position = UDim2.new(math.clamp(r, .1, .9), 0, 0, 6)
+			bub.Position = UDim2.new(math.clamp(r, .1, .9), 0, 0, 7)
 		else
 			tw(fill, {Size = UDim2.fromScale(r, 1)}, .1)
-			tw(bub, {Position = UDim2.new(math.clamp(r, .1, .9), 0, 0, 6)}, .1)
+			tw(bub, {Position = UDim2.new(math.clamp(r, .1, .9), 0, 0, 7)}, .1)
 		end
 		if not silent then safe(o.Callback, v) end
 	end
@@ -694,12 +754,12 @@ function Box:AddSlider(o)
 end
 
 function Box:AddInput(o)
-	local c = self:_row(o, 140)
+	local c = self:_row(o, 156)
 	local obj = {Type = "Input", Value = o.Default or ""}
-	local f = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(140, 26), Parent = c.row})
-	bind(f, "BackgroundColor3", "Bg") corner(f, 6)
+	local f = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(146, 28), Parent = c.row})
+	bind(f, "BackgroundColor3", "Bg") corner(f, 14)
 	local st = stroke(f, "Stroke", 1, 0)
-	local tb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = obj.Value,
+	local tb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = obj.Value,
 		PlaceholderText = o.Placeholder or "ketik di sini", ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = f})
 	bind(tb, "TextColor3", "Text") bind(tb, "PlaceholderColor3", "Sub")
 	tb.Focused:Connect(function() tw(st, {Color = Cur.Accent}, .1) end)
@@ -716,25 +776,24 @@ function Box:AddInput(o)
 end
 
 function Box:AddDropdown(o)
-	local c = self:_row(o, 130)
+	local c = self:_row(o, 146)
 	local multi = o.Multi
 	local obj = {Type = "Dropdown", Values = o.Values or {}, Value = multi and {} or nil, Open = false}
-	local disp = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(130, 26), Parent = c.row})
-	bind(disp, "BackgroundColor3", "Bg") corner(disp, 6)
+	local disp = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(136, 28), Parent = c.row})
+	bind(disp, "BackgroundColor3", "Bg") corner(disp, 14)
 	local dst = stroke(disp, "Stroke", 1, 0)
 	local dl = label(disp, "", 12, "Text")
-	dl.Position, dl.Size, dl.TextTruncate = UDim2.fromOffset(10, 0), UDim2.new(1, -28, 1, 0), E.TextTruncate.AtEnd
-	local arrow = img(disp, "chevron", 10, "Sub")
-	arrow.AnchorPoint, arrow.Position = Vector2.new(1, .5), UDim2.new(1, -8, .5, 0)
+	dl.Position, dl.Size, dl.TextTruncate = UDim2.fromOffset(12, 0), UDim2.new(1, -32, 1, 0), E.TextTruncate.AtEnd
+	local arrow = img(disp, "chevron", 11, "Sub")
+	arrow.AnchorPoint, arrow.Position = Vector2.new(1, .5), UDim2.new(1, -10, .5, 0)
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = c.col})
 	pad(body, 0, 10, 0, 0)
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
 	local sb
 	if o.Search then
-		local sf = new("Frame", {Size = UDim2.new(1, 0, 0, 26), LayoutOrder = 1, Parent = body})
-		bind(sf, "BackgroundColor3", "Bg") corner(sf, 6)
-		stroke(sf, "Stroke", 1, 0)
-		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = "", PlaceholderText = "cari...",
+		local sf = new("Frame", {Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 1, Parent = body})
+		bind(sf, "BackgroundColor3", "Bg") corner(sf, 14)
+		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = "", PlaceholderText = "cari...",
 			ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = sf})
 		bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
 	end
@@ -742,7 +801,7 @@ function Box:AddDropdown(o)
 		AutomaticCanvasSize = AY, CanvasSize = UDim2.new(), Parent = body})
 	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = list})
 	local opts = {}
-	local function target() return 10 + (sb and 32 or 0) + list.Size.Y.Offset end
+	local function target() return 10 + (sb and 34 or 0) + list.Size.Y.Offset end
 	local function isSel(v) if multi then return table.find(obj.Value, v) ~= nil end return obj.Value == v end
 	local function paint()
 		for v, b in pairs(opts) do
@@ -758,23 +817,29 @@ function Box:AddDropdown(o)
 		opts = {}
 		for i, v in ipairs(obj.Values) do
 			v = tostring(v)
-			local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 26), LayoutOrder = i, Parent = list})
-			bind(b, "BackgroundColor3", "Hover") corner(b, 6)
+			local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, -4, 0, 28), LayoutOrder = i, Parent = list})
+			bind(b, "BackgroundColor3", "Hover") corner(b, 10)
 			local l = label(b, v, 12, "Text")
-			l.Position, l.Size = UDim2.fromOffset(10, 0), UDim2.new(1, -32, 1, 0)
+			l.Position, l.Size = UDim2.fromOffset(12, 0), UDim2.new(1, -36, 1, 0)
 			local ck = img(b, "check", 11, "Accent")
-			ck.AnchorPoint, ck.Position, ck.ImageTransparency = Vector2.new(1, .5), UDim2.new(1, -8, .5, 0), 1
+			ck.AnchorPoint, ck.Position, ck.ImageTransparency = Vector2.new(1, .5), UDim2.new(1, -10, .5, 0), 1
 			b.MouseEnter:Connect(function() tw(b, {BackgroundTransparency = 0}, .06) end)
 			b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 1}, .1) end)
 			b.MouseButton1Click:Connect(function() obj:_pick(v) end)
 			opts[v] = {btn = b, lbl = l, chk = ck}
 		end
-		list.Size = UDim2.new(1, 0, 0, math.min(#obj.Values * 28, 126))
+		list.Size = UDim2.new(1, 0, 0, math.min(#obj.Values * 30, 138))
 		paint()
 		if obj.Open then tw(body, {Size = UDim2.new(1, 0, 0, target())}, .18) end
 	end
 	local function setOpen(v)
 		obj.Open = v
+		if v then
+			if openDD and openDD ~= obj then openDD:Close() end
+			openDD = obj
+		elseif openDD == obj then
+			openDD = nil
+		end
 		tw(body, {Size = UDim2.new(1, 0, 0, v and target() or 0)}, .2)
 		tw(arrow, {Rotation = v and 180 or 0}, .18)
 		tw(dst, {Color = v and Cur.Accent or Cur.Stroke}, .1)
@@ -806,6 +871,7 @@ function Box:AddDropdown(o)
 	end
 	function obj:Get() return self.Value end
 	function obj:Serialize() return self.Value end
+	function obj:Close() if self.Open then setOpen(false) end end
 	function obj:Refresh(vals)
 		self.Values = vals
 		if not multi and self.Value and not table.find(vals, self.Value) then self.Value = nil end
@@ -818,19 +884,21 @@ function Box:AddDropdown(o)
 end
 
 function Box:AddKeybind(o)
-	local c = self:_row(o, 76)
+	local c = self:_row(o, 86)
 	local mode = o.Mode or "Press"
 	local obj = {Type = "Keybind", Key = o.Default or E.KeyCode.Unknown, State = false}
-	local btn = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(76, 26), Parent = c.row})
-	bind(btn, "BackgroundColor3", "Bg") corner(btn, 6)
+	local btn = new("TextButton", {AutoButtonColor = false, Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(76, 28), Parent = c.row})
+	bind(btn, "BackgroundColor3", "Bg") corner(btn, 14)
 	local st = stroke(btn, "Stroke", 1, 0)
-	local kl = label(btn, "", 11, "Text")
-	kl.FontFace = mono()
-	kl.Size, kl.TextXAlignment, kl.TextTruncate = UDim2.fromScale(1, 1), E.TextXAlignment.Center, E.TextTruncate.AtEnd
+	local kl = label(btn, "", 12, "Text")
+	kl.Size, kl.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
 	local listening = false
 	local function show() kl.Text = obj.Key == E.KeyCode.Unknown and "none" or obj.Key.Name end
 	function obj:Set(k, silent)
-		if type(k) == "string" then k = E.KeyCode[k] or E.KeyCode.Unknown end
+		if type(k) == "string" then
+			local okk, kc = pcall(function() return E.KeyCode[k] end)
+			k = (okk and kc) or E.KeyCode.Unknown
+		end
 		self.Key = k
 		show()
 		if not silent then safe(o.Changed, k) end
@@ -865,26 +933,25 @@ function Box:AddKeybind(o)
 end
 
 function Box:AddColorPicker(o)
-	local c = self:_row(o, 100)
+	local c = self:_row(o, 112)
 	local obj = {Type = "Color"}
 	local H, S, V = Color3.toHSV(o.Default or Cur.Accent)
-	local sw = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(24, 24), Parent = c.row})
-	corner(sw, 6) stroke(sw, "StrokeHi", 1, 0)
-	local hex = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -30, .5, 0), Size = UDim2.fromOffset(68, 24), Text = "", ClearTextOnFocus = false,
-		TextSize = 11, FontFace = mono(), Parent = c.row})
-	bind(hex, "BackgroundColor3", "Bg") bind(hex, "TextColor3", "Text") corner(hex, 6)
-	stroke(hex, "Stroke", 1, 0)
+	local sw = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = c.row})
+	corner(sw, 13) stroke(sw, "Stroke", 1.5, 0)
+	local hex = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -34, .5, 0), Size = UDim2.fromOffset(70, 24), Text = "", ClearTextOnFocus = false,
+		TextSize = 11, FontFace = font(), Parent = c.row})
+	bind(hex, "BackgroundColor3", "Bg") bind(hex, "TextColor3", "Text") corner(hex, 12)
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = c.col})
 	local sv = new("Frame", {Position = UDim2.fromOffset(0, 12), Size = UDim2.new(1, -26, 0, 110), Active = true, BackgroundColor3 = WHITE, Parent = body})
-	corner(sv, 6)
+	corner(sv, 10)
 	local wg = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, Parent = sv})
-	corner(wg, 6) new("UIGradient", {Transparency = NumberSequence.new(0, 1), Parent = wg})
+	corner(wg, 10) new("UIGradient", {Transparency = NumberSequence.new(0, 1), Parent = wg})
 	local bk = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = BLACK, Parent = sv})
-	corner(bk, 6) new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = bk})
+	corner(bk, 10) new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = bk})
 	local cur = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(12, 12), BackgroundTransparency = 1, Parent = sv})
 	corner(cur, 6) new("UIStroke", {Color = WHITE, Thickness = 2, Parent = cur})
 	local hue = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 12), Size = UDim2.fromOffset(16, 110), Active = true, BackgroundColor3 = WHITE, Parent = body})
-	corner(hue, 5)
+	corner(hue, 8)
 	local ks = {}
 	for i = 0, 6 do ks[#ks + 1] = ColorSequenceKeypoint.new(i / 6, Color3.fromHSV(math.min(i / 6, .999), 1, 1)) end
 	new("UIGradient", {Rotation = 90, Color = ColorSequence.new(ks), Parent = hue})
@@ -922,44 +989,43 @@ function Box:AddColorPicker(o)
 			if not r then return end
 			v = C3(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16))
 		end
-		H, S, V = Color3.toHSV(v)
+		local nh, ns, nv = Color3.toHSV(v)
+		if ns > 0 and nv > 0 then H = nh end
+		S, V = ns, nv
 		upd(silent)
 	end
 	function obj:Get() return self.Value end
 	function obj:Serialize() return hex.Text end
-	hex.FocusLost:Connect(function() obj:Set(hex.Text) end)
+	hex.FocusLost:Connect(function() obj:Set(hex.Text) upd(true) end)
 	upd(true)
 	return reg(o, obj)
 end
 
--- pemilih tema: kotak kecil berisi warna latar tema + titik aksennya, jadi terlihat seperti apa temanya sebelum dipilih
+-- pemilih tema berupa deretan lingkaran warna
 function Box:AddThemePicker(o)
 	o = o or {}
 	local c = self:_row({Title = o.Title or "Tema", Description = CurName}, 0)
 	local grid = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = 2, Parent = c.col})
-	pad(grid, 0, 10, 0, 0)
-	new("UIGridLayout", {CellSize = UDim2.fromOffset(34, 34), CellPadding = UDim2.fromOffset(8, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = grid})
+	pad(grid, 0, 12, 0, 0)
+	new("UIGridLayout", {CellSize = UDim2.fromOffset(32, 32), CellPadding = UDim2.fromOffset(10, 10), SortOrder = E.SortOrder.LayoutOrder, Parent = grid})
 	local chips = {}
 	for idx, name in ipairs(Senja:GetThemes()) do
 		local t = Themes[name]
-		local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = t.Bg, LayoutOrder = idx, Parent = grid})
-		corner(b, 8)
-		local dot = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = t.Accent, Parent = b})
-		corner(dot, 7)
+		local b = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = t.Accent, LayoutOrder = idx, Parent = grid})
+		corner(b, 16)
 		local us = new("UIScale", {Parent = b})
-		local ring = new("UIStroke", {Color = t.StrokeHi, Thickness = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = b})
-		b.MouseEnter:Connect(function() tw(us, {Scale = 1.07}, .1) end)
+		local ring = new("UIStroke", {Color = Cur.Text, Thickness = 2, Transparency = 1, ApplyStrokeMode = E.ApplyStrokeMode.Border, Parent = b})
+		b.MouseEnter:Connect(function() tw(us, {Scale = 1.1}, .1) end)
 		b.MouseLeave:Connect(function() tw(us, {Scale = 1}, .12) end)
-		b.MouseButton1Down:Connect(function() tw(us, {Scale = .94}, .06) end)
-		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1.07}, .12) end)
+		b.MouseButton1Down:Connect(function() tw(us, {Scale = .92}, .06) end)
+		b.MouseButton1Up:Connect(function() tw(us, {Scale = 1.1}, .12) end)
 		b.MouseButton1Click:Connect(function() Senja:SetTheme(name) safe(o.Callback, name) end)
-		chips[name] = {ring = ring, us = us, t = t}
+		chips[name] = {ring = ring, us = us}
 	end
 	local function paint()
 		if c.desc then c.desc.Text = CurName .. (AccentOverride and " (aksen kustom)" or "") end
 		for name, ch in pairs(chips) do
-			local sel = name == CurName and not AccentOverride
-			tw(ch.ring, {Color = sel and Cur.Accent or ch.t.StrokeHi, Thickness = sel and 2 or 1}, .12)
+			tw(ch.ring, {Transparency = (name == CurName and not AccentOverride) and 0 or 1, Color = Cur.Text}, .12)
 		end
 	end
 	Hooks[#Hooks + 1] = paint
@@ -973,11 +1039,11 @@ function Box:AddSection(o)
 	if type(o) == "string" then o = {Title = o} end
 	local sec = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = self:_n(), Parent = self.Body})
 	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = sec})
-	local head = new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 1, Parent = sec})
-	local hl = label(head, (o.Title or ""):upper(), 10, "Sub", E.FontWeight.Bold)
-	hl.Position, hl.Size = UDim2.fromOffset(2, 0), UDim2.new(1, -22, 1, 0)
-	local ar = img(head, "chevron", 10, "Sub")
-	ar.AnchorPoint, ar.Position = Vector2.new(1, .5), UDim2.new(1, -2, .5, 0)
+	local head = new("TextButton", {BackgroundTransparency = 1, Text = "", Size = UDim2.new(1, 0, 0, 24), LayoutOrder = 1, Parent = sec})
+	local hl = label(head, o.Title or "", 12, "Sub", E.FontWeight.SemiBold)
+	hl.Position, hl.Size = UDim2.fromOffset(4, 0), UDim2.new(1, -24, 1, 0)
+	local ar = img(head, "chevron", 11, "Sub")
+	ar.AnchorPoint, ar.Position = Vector2.new(1, .5), UDim2.new(1, -4, .5, 0)
 	local content = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = 2, Parent = sec})
 	local group = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = content})
 	local cl = new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = group})
@@ -1009,6 +1075,39 @@ function Box:AddSection(o)
 	head.MouseLeave:Connect(function() tw(hl, {TextColor3 = Cur.Sub}, .12) end)
 	head.MouseButton1Click:Connect(function() sub:SetOpen(not open) end)
 	return sub
+end
+
+-- pengaturan UI (tema, aksen, ukuran, kecepatan, dll) tersimpan otomatis ke Senja/ui.json dan dimuat lagi saat UI dijalankan
+local Prefs = {}
+local prefTok = 0
+local function prefPath() return Senja.Folder .. "/ui.json" end
+local function toHex(c)
+	return string.format("#%02X%02X%02X", math.floor(c.R * 255 + .5), math.floor(c.G * 255 + .5), math.floor(c.B * 255 + .5))
+end
+local function fromHex(s)
+	local r, g, b = tostring(s):match("^#?(%x%x)(%x%x)(%x%x)$")
+	if r then return C3(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16)) end
+end
+local function loadPrefs()
+	if not (readfile and isfile) then return {} end
+	local ok, d = pcall(function()
+		if not isfile(prefPath()) then return {} end
+		return HttpService:JSONDecode(readfile(prefPath()))
+	end)
+	return (ok and type(d) == "table") and d or {}
+end
+local function pref(k, v)
+	Prefs[k] = v
+	if not writefile then return end
+	prefTok += 1
+	local t = prefTok
+	task.delay(.5, function()
+		if t ~= prefTok then return end
+		pcall(function()
+			if makefolder and isfolder and not isfolder(Senja.Folder) then makefolder(Senja.Folder) end
+			writefile(prefPath(), HttpService:JSONEncode(Prefs))
+		end)
+	end)
 end
 
 ------------------------------------------------------------ window
@@ -1055,8 +1154,8 @@ end
 function Window:_fab()
 	if not self.Fab then return end
 	local op = self.Open
-	tw(self.FabScale, {Scale = op and .88 or 1}, .16)
-	tw(self.FabStroke, {Color = op and Cur.Accent or Cur.StrokeHi}, .14)
+	tw(self.FabScale, {Scale = op and .86 or 1}, .16)
+	tw(self.FabStroke, {Color = op and Cur.Accent or Cur.Stroke}, .14)
 	tw(self.Fab, {BackgroundTransparency = op and .3 or 0}, .14)
 end
 -- saat UI tertutup tombol selalu tampil, supaya UI tidak bisa "hilang" tanpa jalan kembali
@@ -1071,7 +1170,7 @@ end
 -- garis bawah window saat ditarik ke atas
 function Window:_grabFx(over)
 	local g = self.GrabFx.pill
-	tw(g, {BackgroundColor3 = over and Cur.Accent or Cur.Sub, BackgroundTransparency = over and 0 or .55, Size = UDim2.fromOffset(over and 56 or 32, 3)}, .1)
+	tw(g, {BackgroundColor3 = over and Cur.Accent or Cur.Sub, BackgroundTransparency = over and 0 or .55, Size = UDim2.fromOffset(over and 64 or 34, 3)}, .1)
 end
 
 function Window:Toggle(v)
@@ -1098,6 +1197,7 @@ end
 function Window:SetScale(n)
 	self.UserScale = n
 	tw(self.Scale, {Scale = n}, .15)
+	self:_fit()
 end
 
 -- saat diminimalkan latar tidak diredupkan, supaya game tetap terlihat
@@ -1113,7 +1213,8 @@ function Window:SetMinimized(v)
 	v = v and true or false
 	if self.Minimized == v then return end
 	self.Minimized = v
-	tw(self.Main, {Size = v and UDim2.new(1, 0, 0, HEAD) or UDim2.fromScale(1, 1)}, .26, Qn)
+	tw(self.Main, {Size = v and UDim2.new(1, 0, 0, 52) or UDim2.fromScale(1, 1)}, .26, Qn)
+	tw(self.MainCorner, {CornerRadius = UDim.new(0, v and 26 or 20)}, .26, Qn)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .2) end
 	self.Grab.Visible = not v
 	self.MinIcon.Image = Senja.Icon(v and "chevron" or "minus")
@@ -1132,6 +1233,7 @@ function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
 function Window:ResetPos()
 	self.Home = UDim2.fromScale(.5, .5)
+	pref("wx", nil) pref("wy", nil)
 	if self.Open then
 		self:_stop()
 		tw(self.Root, {Position = self.Home}, .24, Qn)
@@ -1139,6 +1241,7 @@ function Window:ResetPos()
 end
 
 function Window:Destroy()
+	pcall(function() self:_autoSave() end)
 	for _, c in ipairs(self.Conns) do pcall(function() c:Disconnect() end) end
 	self._tok += 1
 	self.Open = false
@@ -1149,9 +1252,76 @@ function Window:Destroy()
 	task.delay(.3, function() self.Gui:Destroy() end)
 end
 
+-- ukuran window mengikuti ukuran layar dan skala UI (supaya tidak melebihi layar saat diputar atau skala 130%)
+function Window:_fit()
+	local v = workspace.CurrentCamera.ViewportSize
+	local k = self.UserScale
+	self.Root.Size = UDim2.fromOffset(math.min(self.BaseSize.X, (v.X - 24) / k), math.min(self.BaseSize.Y, (v.Y - 24) / k))
+	self:_clamp()
+	if not self.Open then
+		local _, cy = self:_px()
+		self:_at(cy)
+	end
+end
+
+-- jaga supaya header tidak pernah keluar layar (kalau keluar, window tidak bisa dijangkau lagi)
+function Window:_clamp()
+	local v = workspace.CurrentCamera.ViewportSize
+	local k = self.UserScale
+	local w, h = self.Root.Size.X.Offset * k, self.Root.Size.Y.Offset * k
+	local cx = self.Home.X.Scale * v.X + self.Home.X.Offset
+	local cy = self.Home.Y.Scale * v.Y + self.Home.Y.Offset
+	local xlo, xhi = 120 - w / 2, v.X - 120 + w / 2
+	if xlo > xhi then xlo = xhi end
+	local nx = math.clamp(cx, xlo, xhi)
+	local ny = math.clamp(cy, h / 2, math.max(h / 2, v.Y - 60 + h / 2))
+	if nx ~= cx or ny ~= cy then
+		self.Home = UDim2.new(self.Home.X.Scale, self.Home.X.Offset + (nx - cx), self.Home.Y.Scale, self.Home.Y.Offset + (ny - cy))
+		if self.Open then
+			self:_stop()
+			tw(self.Root, {Position = self.Home}, .2, Qn)
+		end
+		return true
+	end
+end
+
+function Window:Show() self:Toggle(true) end
+function Window:Hide() self:Toggle(false) end
+function Window:IsOpen() return self.Open end
+function Window:SetTitle(t) self.TitleLabel.Text = tostring(t) end
+function Window:SetSubtitle(t) self.SubLabel.Text = tostring(t) end
+
+-- pilih tab dari objek tab, nomor urut, atau judulnya
+function Window:SelectTab(x)
+	local tab = x
+	if type(x) == "number" then
+		tab = self.Tabs[x]
+	elseif type(x) == "string" then
+		tab = nil
+		for _, t in ipairs(self.Tabs) do
+			if t.Title == x then tab = t break end
+		end
+	end
+	if tab then self:Select(tab) end
+	return tab
+end
+
+function Window:Confirm(title, content, onYes, onNo)
+	self:Dialog({Title = title, Content = content, Buttons = {{Title = "Batal", Callback = onNo}, {Title = "Ya", Primary = true, Callback = onYes}}})
+end
+
+-- lebih dari 5 tab: label hanya tampil di tab yang dipilih, sisanya ikon saja
+function Window:_labels()
+	local compact = #self.Tabs > 5
+	for _, t in ipairs(self.Tabs) do
+		t.Lb.Visible = not compact or t == self.Current
+	end
+end
+
 -- pindah tab: halaman lama langsung disembunyikan, halaman baru menggeser masuk dari arah yang sama dengan indikator
 function Window:Select(tab)
 	if self.Current == tab then return end
+	if openDD then openDD:Close() end
 	local old = self.Current
 	self.Current = tab
 	if not tab.IsSettings then self.LastTab = tab end
@@ -1161,10 +1331,11 @@ function Window:Select(tab)
 		old.Group.Visible = false
 	end
 	tab._paint(true)
-	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(20 * dir, 0), true
+	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(24 * dir, 0), true
 	if tab._tw then tab._tw:Cancel() end
 	tab._tw = tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
 	self:_moveInd(old ~= nil)
+	self:_labels()
 	self:_filter(self.SearchBox.Text)
 	for _, s in ipairs(tab.Secs) do s.Refresh() end
 	task.defer(function() for _, s in ipairs(tab.Secs) do s.Refresh() end end)
@@ -1178,9 +1349,10 @@ function Window:_filter(q)
 	if not tab then return end
 	local hit = {}
 	for _, it in ipairs(tab.Items) do
-		local ok = q == "" or it.title:lower():find(q, 1, true) ~= nil
-		it.holder.Visible = ok
-		if ok then hit[it.box] = true end
+		local hay = (it.title .. " " .. (it.desc or "")):lower()
+		local ok = q == "" or hay:find(q, 1, true) ~= nil
+		it.holder.Visible = ok and not it.hidden
+		if ok and not it.hidden then hit[it.box] = true end
 	end
 	for _, s in ipairs(tab.Secs) do
 		s.Frame.Visible = q == "" or hit[s] == true
@@ -1188,7 +1360,7 @@ function Window:_filter(q)
 	end
 end
 
--- semua tombol tab berbagi lebar sama; garis aksen di dasar bilah bergeser di antaranya
+-- semua tombol tab berbagi lebar sama; indikator bergeser di antaranya
 function Window:_layoutTabs()
 	local n = #self.Tabs
 	for i, t in ipairs(self.Tabs) do
@@ -1196,18 +1368,19 @@ function Window:_layoutTabs()
 		t.Btn.Size = UDim2.new(1 / n, 0, 1, 0)
 		t.Btn.Position = UDim2.new((i - 1) / n, 0, 0, 0)
 	end
-	self.Ind.Size = UDim2.new(1 / n, -24, 0, 2)
+	self.Ind.Size = UDim2.new(1 / n, -4, 1, 0)
 	self:_moveInd(false)
+	self:_labels()
 end
 function Window:_moveInd(anim)
 	local t = self.Current
 	if not t then return end
-	-- halaman pengaturan tidak ada di bilah tab, jadi garisnya disembunyikan
+	-- halaman pengaturan tidak ada di bilah tab, jadi indikator disembunyikan
 	if t.IsSettings then
 		tw(self.Ind, {BackgroundTransparency = 1}, .12)
 		return
 	end
-	local pos = UDim2.new((t.Index - 1) / #self.Tabs, 12, 1, 0)
+	local pos = UDim2.new((t.Index - 1) / #self.Tabs, 2, 0, 0)
 	local hidden = self.Ind.BackgroundTransparency > .5
 	self.Ind.Visible = true
 	if anim and not hidden then tw(self.Ind, {Position = pos}, .26, Qn) else self.Ind.Position = pos end
@@ -1218,13 +1391,13 @@ end
 function Window:_newPage()
 	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = self.Pages})
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
-		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .3, Parent = grp})
+		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
 	bind(sc, "ScrollBarImageColor3", "Track")
 	-- UIPadding langsung di ScrollingFrame ikut memotong area gulir (bagian bawah dan atas jadi terpotong),
 	-- jadi layout + padding dipindah ke frame isi di dalamnya
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = sc})
-	new("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
-	pad(body, 12, 10, 12, 16)
+	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
+	pad(body, 14, 8, 14, 20)
 	local tab = newBox(self, nil, body)
 	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll = tab, {}, grp, {}, sc
 	return tab
@@ -1239,13 +1412,13 @@ function Window:AddTab(o)
 	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center,
 		HorizontalAlignment = E.HorizontalAlignment.Center, Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = cont})
 	local cus = new("UIScale", {Parent = cont})
-	local ic = img(cont, o.Icon or "star", 13, "Sub")
+	local ic = img(cont, o.Icon or "star", 14, "Sub")
 	ic.LayoutOrder = 1
 	local lb = label(cont, o.Title or "Tab", 12, "Sub", E.FontWeight.SemiBold)
 	lb.AutomaticSize, lb.Size, lb.LayoutOrder = AX, UDim2.fromOffset(0, 16), 2
 
 	local tab = self:_newPage()
-	tab.Btn = btn
+	tab.Btn, tab.Lb, tab.Title = btn, lb, o.Title or "Tab"
 	tab._paint = function(sel, inst)
 		local t = inst and 0 or .12
 		tw(ic, {ImageColor3 = sel and Cur.Accent or Cur.Sub}, t)
@@ -1256,7 +1429,7 @@ function Window:AddTab(o)
 		if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Sub}, .12) end
 		tw(cus, {Scale = 1}, .12)
 	end)
-	btn.MouseButton1Down:Connect(function() tw(cus, {Scale = .95}, .06) end)
+	btn.MouseButton1Down:Connect(function() tw(cus, {Scale = .94}, .06) end)
 	btn.MouseButton1Up:Connect(function() tw(cus, {Scale = 1}, .16) end)
 	btn.MouseButton1Click:Connect(function() win:Select(tab) end)
 	Hooks[#Hooks + 1] = function() tab._paint(win.Current == tab) end
@@ -1266,40 +1439,40 @@ function Window:AddTab(o)
 	return tab
 end
 
--- o.Buttons: {Title, Primary, Danger, Callback}. Danger = tombol merah untuk aksi yang menghapus sesuatu
 function Window:Dialog(o)
+	-- dialog harus terlihat: pulihkan dari minimize / buka window dulu
+	if self.Minimized then
+		self:SetMinimized(false)
+		task.delay(.22, function() self:Dialog(o) end)
+		return
+	end
+	if not self.Open then self:Toggle(true) end
 	local ov = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 100, Parent = self.Main})
-	corner(ov, 12)
-	tw(ov, {BackgroundTransparency = .45}, .12)
-	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(300, 0), AutomaticSize = AY, Parent = ov})
-	bind(card, "BackgroundColor3", "Surface") corner(card, 10) stroke(card, "StrokeHi", 1, 0) pad(card, 16, 16, 16, 14)
-	local us = new("UIScale", {Scale = .95, Parent = card})
+	corner(ov, 20)
+	tw(ov, {BackgroundTransparency = .4}, .12)
+	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(320, 0), AutomaticSize = AY, Parent = ov})
+	bind(card, "BackgroundColor3", "Surface") corner(card, 20) stroke(card, "Stroke", 1, 0) pad(card, 20, 20, 20, 16)
+	local us = new("UIScale", {Scale = .94, Parent = card})
 	tw(us, {Scale = 1}, .2, Qn)
-	new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = card})
-	label(card, o.Title or "Konfirmasi", 15, "Text", E.FontWeight.Bold).LayoutOrder = 1
+	new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = card})
+	label(card, o.Title or "Konfirmasi", 16, "Text", E.FontWeight.Bold).LayoutOrder = 1
 	local ct = label(card, o.Content or "", 12, "Sub")
 	ct.TextWrapped, ct.AutomaticSize, ct.Size, ct.LayoutOrder = true, AY, UDim2.new(1, 0, 0, 0), 2
-	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), LayoutOrder = 3, Parent = card})
+	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 38), LayoutOrder = 3, Parent = card})
 	pad(row, 0, 8, 0, 0)
-	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, HorizontalAlignment = E.HorizontalAlignment.Right, Padding = UDim.new(0, 6), SortOrder = E.SortOrder.LayoutOrder, Parent = row})
+	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, HorizontalAlignment = E.HorizontalAlignment.Right, Padding = UDim.new(0, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = row})
 	local function close()
-		tw(us, {Scale = .97}, .1)
+		tw(us, {Scale = .96}, .1)
 		tw(ov, {BackgroundTransparency = 1}, .1)
 		task.wait(.1)
 		ov:Destroy()
 	end
 	for i, b in ipairs(o.Buttons or {{Title = "OK"}}) do
-		local bt = new("TextButton", {AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(math.max(68, #b.Title * 7 + 26), 28), LayoutOrder = i, Parent = row})
-		if b.Danger then bt.BackgroundColor3 = KindCol.error else bind(bt, "BackgroundColor3", b.Primary and "Accent" or "Hover") end
-		corner(bt, 6)
+		local bt = new("TextButton", {AutoButtonColor = false, Text = "", Size = UDim2.fromOffset(math.max(72, #b.Title * 7 + 28), 30), LayoutOrder = i, Parent = row})
+		bind(bt, "BackgroundColor3", b.Primary and "Accent" or "Hover") corner(bt, 15)
 		local bs = new("UIScale", {Parent = bt})
-		local l
-		if b.Danger then
-			l = new("TextLabel", {BackgroundTransparency = 1, Text = b.Title, TextSize = 12, FontFace = font(E.FontWeight.SemiBold), TextColor3 = WHITE, Size = UDim2.fromScale(1, 1), Parent = bt})
-		else
-			l = label(bt, b.Title, 12, b.Primary and "OnAccent" or "Text", E.FontWeight.SemiBold)
-			l.Size, l.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
-		end
+		local l = label(bt, b.Title, 12, b.Primary and "OnAccent" or "Text", E.FontWeight.SemiBold)
+		l.Size, l.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
 		bt.MouseEnter:Connect(function() tw(bt, {BackgroundTransparency = .12}, .08) end)
 		bt.MouseLeave:Connect(function() tw(bt, {BackgroundTransparency = 0}, .1) tw(bs, {Scale = 1}, .12) end)
 		bt.MouseButton1Down:Connect(function() tw(bs, {Scale = .95}, .05) end)
@@ -1309,17 +1482,48 @@ function Window:Dialog(o)
 end
 
 local function cfgPath(n) return Senja.Folder .. "/configs/" .. n .. ".json" end
+function Window:_serialize()
+	local d = {__theme = CurName}
+	if AccentOverride then d.__accent = toHex(AccentOverride) end
+	for f, ob in pairs(Senja.Flags) do if ob.Serialize then d[f] = ob:Serialize() end end
+	return HttpService:JSONEncode(d)
+end
+local function ensureCfgDir()
+	if not (makefolder and isfolder) then return end
+	pcall(function()
+		if not isfolder(Senja.Folder) then makefolder(Senja.Folder) end
+		if not isfolder(Senja.Folder .. "/configs") then makefolder(Senja.Folder .. "/configs") end
+	end)
+end
 function Window:SaveConfig(name)
 	if not writefile then return false end
 	name = tostring(name or "default"):gsub("[^%w_%-]", "")
-	pcall(makefolder, Senja.Folder) pcall(makefolder, Senja.Folder .. "/configs")
-	local d = {__theme = CurName}
-	if AccentOverride then
-		d.__accent = string.format("#%02X%02X%02X", math.floor(AccentOverride.R * 255 + .5), math.floor(AccentOverride.G * 255 + .5), math.floor(AccentOverride.B * 255 + .5))
+	ensureCfgDir()
+	local json = self:_serialize()
+	local ok = pcall(writefile, cfgPath(name), json)
+	if ok and name == Prefs.autoload then self._lastSave = json end
+	return ok
+end
+
+-- config yang dipilih di Pengaturan ("Muat & simpan otomatis") dimuat lewat fungsi ini. panggil SETELAH semua elemen dibuat.
+-- sesudahnya perubahan disimpan sendiri tiap 15 detik (hanya kalau ada yang berubah).
+function Window:AutoLoad()
+	local n = Prefs.autoload
+	local loaded = false
+	if n and readfile and isfile and isfile(cfgPath(n)) then loaded = self:LoadConfig(n) end
+	if n then
+		self.AutoReady = true
+		self._lastSave = loaded and self:_serialize() or nil
 	end
-	for f, ob in pairs(Senja.Flags) do if ob.Serialize then d[f] = ob:Serialize() end end
-	writefile(cfgPath(name), HttpService:JSONEncode(d))
-	return true
+	return loaded
+end
+function Window:_autoSave()
+	local n = Prefs.autoload
+	if not (n and self.AutoReady and writefile) then return end
+	local json = self:_serialize()
+	if json == self._lastSave then return end
+	ensureCfgDir()
+	if pcall(writefile, cfgPath(n), json) then self._lastSave = json end
 end
 function Window:LoadConfig(name)
 	if not (readfile and isfile) or not isfile(cfgPath(name)) then return false end
@@ -1345,39 +1549,6 @@ function Window:ListConfigs()
 		end
 	end
 	return r
-end
-
--- pengaturan UI (tema, aksen, ukuran, kecepatan, dll) tersimpan otomatis ke Senja/ui.json dan dimuat lagi saat UI dijalankan
-local Prefs = {}
-local prefTok = 0
-local function prefPath() return Senja.Folder .. "/ui.json" end
-local function toHex(c)
-	return string.format("#%02X%02X%02X", math.floor(c.R * 255 + .5), math.floor(c.G * 255 + .5), math.floor(c.B * 255 + .5))
-end
-local function fromHex(s)
-	local r, g, b = tostring(s):match("^#?(%x%x)(%x%x)(%x%x)$")
-	if r then return C3(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16)) end
-end
-local function loadPrefs()
-	if not (readfile and isfile) then return {} end
-	local ok, d = pcall(function()
-		if not isfile(prefPath()) then return {} end
-		return HttpService:JSONDecode(readfile(prefPath()))
-	end)
-	return (ok and type(d) == "table") and d or {}
-end
-local function pref(k, v)
-	Prefs[k] = v
-	if not writefile then return end
-	prefTok += 1
-	local t = prefTok
-	task.delay(.5, function()
-		if t ~= prefTok then return end
-		pcall(function()
-			if makefolder and isfolder and not isfolder(Senja.Folder) then makefolder(Senja.Folder) end
-			writefile(prefPath(), HttpService:JSONEncode(Prefs))
-		end)
-	end)
 end
 
 function Window:_buildSettings(tab)
@@ -1413,6 +1584,21 @@ function Window:_buildSettings(tab)
 		local ok = win:LoadConfig(n)
 		Senja:Notify({Title = ok and ("Config dimuat: " .. tostring(n)) or "Config tidak ditemukan", Content = ok and nil or tostring(n), Type = ok and "success" or "warn"})
 	end})
+	cfg:AddToggle({Title = "Muat & simpan otomatis", Description = "config di atas dimuat saat script dijalankan dan disimpan tiap ada perubahan. butuh Win:AutoLoad() di akhir script.",
+		Default = Prefs.autoload ~= nil, Callback = function(v)
+			if not win.Live then return end
+			if v then
+				local n = tostring(dd:Get() or nameIn:Get() or ""):gsub("[^%w_%-]", "")
+				if n == "" then n = "default" end
+				pref("autoload", n)
+				win.AutoReady = true
+				win:SaveConfig(n)
+				dd:Refresh(win:ListConfigs())
+				Senja:Notify({Title = "Simpan otomatis aktif", Content = n, Type = "success"})
+			else
+				pref("autoload", nil)
+			end
+		end})
 	local lain = tab:AddSection("Lain-lain")
 	local afk
 	lain:AddToggle({Title = "Anti AFK", Description = "cegah kick karena idle 20 menit", Callback = function(v)
@@ -1423,6 +1609,22 @@ function Window:_buildSettings(tab)
 			end)
 		elseif afk then afk:Disconnect() afk = nil end
 	end})
+	lain:AddButton({Title = "Rejoin server", Description = "keluar dan masuk ulang ke server ini", Icon = "play", Callback = function()
+		win:Confirm("Rejoin server?", "Kamu akan keluar lalu masuk ulang ke server ini.", function()
+			local ts = game:GetService("TeleportService")
+			pcall(function()
+				if #game.JobId > 0 then ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP) else ts:Teleport(game.PlaceId, LP) end
+			end)
+		end)
+	end})
+	lain:AddButton({Title = "Salin ID server", Description = "salin JobId ke clipboard", Icon = "save", Callback = function()
+		if setclipboard then
+			setclipboard(game.JobId)
+			Senja:Notify({Title = "ID server disalin", Type = "success"})
+		else
+			Senja:Notify({Title = "Executor tidak punya setclipboard", Type = "error"})
+		end
+	end})
 	lain:AddButton({Title = "Reset posisi window", Description = "kembalikan ke tengah layar", Icon = "target", Callback = function() win:ResetPos() end})
 	lain:AddButton({Title = "Tutup UI", Description = "hapus window ini sepenuhnya", Icon = "x", Callback = function() win:_confirmClose() end})
 	return tab
@@ -1431,7 +1633,7 @@ end
 function Window:_confirmClose()
 	local function ask()
 		self:Dialog({Title = "Tutup UI?", Content = "Window akan dihapus. Pengaturan UI tetap tersimpan, config fitur yang belum disimpan hilang.",
-			Buttons = {{Title = "Batal"}, {Title = "Tutup", Danger = true, Callback = function() self:Destroy() end}}})
+			Buttons = {{Title = "Batal"}, {Title = "Tutup", Primary = true, Callback = function() self:Destroy() end}}})
 	end
 	-- dialog tidak terlihat saat window diminimalkan, jadi dipulihkan dulu
 	if self.Minimized then
@@ -1514,38 +1716,40 @@ function Senja:CreateWindow(o)
 	end
 	local usc = type(P.scale) == "number" and math.clamp(P.scale, 70, 130) / 100 or 1
 	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, Minimized = false, Live = false, UserScale = usc, ToggleKey = tkey,
-		Home = UDim2.fromScale(.5, .5), _tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
+		Home = UDim2.new(.5, type(P.wx) == "number" and P.wx or 0, .5, type(P.wy) == "number" and P.wy or 0),
+		_tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
 	local gui = new("ScreenGui", {Name = o.Name or "SenjaUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(gui)
 	local dim = new("Frame", {BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui})
 	local vp = workspace.CurrentCamera.ViewportSize
-	local sz = o.Size or Vector2.new(620, 430)
+	local sz = o.Size or Vector2.new(640, 440)
+	win.BaseSize = sz
 	local root = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = win.Home,
 		Size = UDim2.fromOffset(math.min(sz.X, vp.X - 24), math.min(sz.Y, vp.Y - 24)), Parent = gui})
 	local scale = new("UIScale", {Scale = win.UserScale, Parent = root})
 	local main = new("Frame", {Size = UDim2.fromScale(1, 1), ClipsDescendants = true, Parent = root})
-	bind(main, "BackgroundColor3", "Bg") stroke(main, "StrokeHi", 1, 0)
-	win.MainCorner = corner(main, 12)
+	bind(main, "BackgroundColor3", "Bg") stroke(main, "Stroke", 1, 0)
+	win.MainCorner = corner(main, 20)
 	win.Gui, win.Root, win.Scale, win.Main, win.Dim = gui, root, scale, main, dim
 
 	-- header
-	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, HEAD), Parent = main})
-	local logo = img(top, o.Icon or "logo", 18, "Accent")
-	logo.AnchorPoint, logo.Position = Vector2.new(.5, .5), UDim2.new(0, 24, .5, 0)
+	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), Parent = main})
+	local logo = img(top, o.Icon or "logo", 20, "Accent")
+	logo.AnchorPoint, logo.Position = Vector2.new(.5, .5), UDim2.new(0, 28, .5, 0)
 	local logos = new("UIScale", {Parent = logo})
-	local tl = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(42, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = top})
+	local tl = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(46, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = AX, Parent = top})
 	new("UIListLayout", {FillDirection = E.FillDirection.Horizontal, VerticalAlignment = E.VerticalAlignment.Center, Padding = UDim.new(0, 8), Parent = tl})
-	local t1 = label(tl, o.Title or "Senja", 14, "Text", E.FontWeight.Bold)
+	local t1 = label(tl, o.Title or "Senja", 15, "Text", E.FontWeight.Bold)
 	t1.AutomaticSize, t1.Size = AX, UDim2.fromOffset(0, 18)
-	local t2 = label(tl, o.Subtitle or ("v" .. Senja.Version), 10, "Sub")
-	t2.FontFace = mono()
+	local t2 = label(tl, o.Subtitle or ("v" .. Senja.Version), 11, "Sub")
 	t2.AutomaticSize, t2.Size = AX, UDim2.fromOffset(0, 14)
+	win.TitleLabel, win.SubLabel = t1, t2
 
 	-- isOn (opsional): kalau mengembalikan true, tombol tetap tampak aktif saat kursor keluar
 	local function wbtn(ic, x, fn, isOn)
 		local b = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, .5),
-			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(26, 26), Parent = top})
-		bind(b, "BackgroundColor3", "Hover") corner(b, 6)
+			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(28, 28), Parent = top})
+		bind(b, "BackgroundColor3", "Hover") corner(b, 14)
 		local us = new("UIScale", {Parent = b})
 		local i = img(b, ic, 12, "Sub")
 		i.AnchorPoint, i.Position = Vector2.new(.5, .5), UDim2.fromScale(.5, .5)
@@ -1561,12 +1765,12 @@ function Senja:CreateWindow(o)
 		b.MouseButton1Click:Connect(fn)
 		return b, i
 	end
-	wbtn("x", -10, function() win:_confirmClose() end)
+	wbtn("x", -14, function() win:_confirmClose() end)
 	-- minus: kecilkan window jadi header saja (klik lagi untuk memulihkan)
-	local _, mic = wbtn("minus", -40, function() win:SetMinimized(not win.Minimized) end)
+	local _, mic = wbtn("minus", -46, function() win:SetMinimized(not win.Minimized) end)
 	win.MinIcon = mic
 	-- gerigi: pengaturan tetap. klik untuk membuka, klik lagi untuk kembali ke tab sebelumnya
-	local gbtn, gic = wbtn("gear", -70, function()
+	local gbtn, gic = wbtn("gear", -80, function()
 		if win.Current == win.Settings then
 			local back = win.LastTab or win.Tabs[1]
 			if back then win:Select(back) end
@@ -1577,11 +1781,11 @@ function Senja:CreateWindow(o)
 	win.GearBtn, win.GearIc = gbtn, gic
 
 	-- pencarian: ikon kecil yang melebar saat diketuk
-	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -100, .5, 0), Size = UDim2.fromOffset(26, 26), ClipsDescendants = true, Parent = top})
-	bind(sbox, "BackgroundColor3", "Hover") corner(sbox, 6)
+	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -112, .5, 0), Size = UDim2.fromOffset(28, 28), ClipsDescendants = true, Parent = top})
+	bind(sbox, "BackgroundColor3", "Hover") corner(sbox, 14)
 	local si = img(sbox, "search", 12, "Sub")
-	si.AnchorPoint, si.Position = Vector2.new(0, .5), UDim2.new(0, 7, .5, 0)
-	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(25, 0), Size = UDim2.fromOffset(116, 26), Text = "", PlaceholderText = "cari...",
+	si.AnchorPoint, si.Position = Vector2.new(0, .5), UDim2.new(0, 8, .5, 0)
+	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(26, 0), Size = UDim2.fromOffset(116, 28), Text = "", PlaceholderText = "cari...",
 		ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Visible = false, Parent = sbox})
 	bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
 	local sbtn = new("TextButton", {Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = sbox})
@@ -1591,7 +1795,7 @@ function Senja:CreateWindow(o)
 		expanded = v
 		if v then sb.Visible = true end
 		sbtn.Visible = not v
-		tw(sbox, {Size = UDim2.fromOffset(v and 148 or 26, 26)}, .22, Qn)
+		tw(sbox, {Size = UDim2.fromOffset(v and 150 or 28, 28)}, .22, Qn)
 		tw(si, {ImageColor3 = v and Cur.Accent or Cur.Sub}, .12)
 		if not v then task.delay(.22, function() if not expanded then sb.Visible = false end end) end
 	end
@@ -1600,41 +1804,40 @@ function Senja:CreateWindow(o)
 	sb:GetPropertyChangedSignal("Text"):Connect(function() win:_filter(sb.Text) end)
 	win.SearchBox = sb
 
-	-- garis pemisah header
-	local hline = new("Frame", {Position = UDim2.fromOffset(0, HEAD - 1), Size = UDim2.new(1, 0, 0, 1), Parent = main})
-	bind(hline, "BackgroundColor3", "Stroke")
-
-	-- bilah tab: garis aksen 2px di dasar bergeser mengikuti tab yang dipilih
-	local nav = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(0, HEAD), Size = UDim2.new(1, 0, 0, NAVH), Parent = main})
-	local nline = new("Frame", {AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 1), Parent = nav})
-	bind(nline, "BackgroundColor3", "Stroke")
-	local ind = new("Frame", {Visible = false, AnchorPoint = Vector2.new(0, 1), Size = UDim2.new(1, -24, 0, 2), Position = UDim2.new(0, 12, 1, 0), Parent = nav})
-	bind(ind, "BackgroundColor3", "Accent") corner(ind, 1)
-	win.Nav, win.Ind, win.NavFrame = nav, ind, nav
+	-- navigasi pill: indikator bergeser mengikuti tab yang dipilih
+	local nav = new("Frame", {Position = UDim2.fromOffset(14, 54), Size = UDim2.new(1, -28, 0, 38), Parent = main})
+	bind(nav, "BackgroundColor3", "Side") corner(nav, 19)
+	local navIn = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = nav})
+	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Position = UDim2.fromOffset(2, 0), Parent = navIn})
+	bind(ind, "BackgroundColor3", "Track") corner(ind, 16)
+	win.Nav, win.Ind, win.NavFrame = navIn, ind, nav
 
 	-- halaman + footer profil
-	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, HEAD + NAVH), Size = UDim2.new(1, 0, 1, -(HEAD + NAVH + FOOT)), Parent = main})
+	local FOOT = 46
+	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 100), Size = UDim2.new(1, 0, 1, -(100 + FOOT)), Parent = main})
 	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
 	win.Foot = foot
-	local fline = new("Frame", {Size = UDim2.new(1, 0, 0, 1), Parent = foot})
+	local fline = new("Frame", {Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -32, 0, 1), Parent = foot})
 	bind(fline, "BackgroundColor3", "Stroke")
-	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 12, .5, 1), Size = UDim2.fromOffset(22, 22),
+	local av = new("ImageLabel", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 16, .5, 1), Size = UDim2.fromOffset(28, 28),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. LP.UserId .. "&w=150&h=150", Parent = foot})
-	bind(av, "BackgroundColor3", "Hover") corner(av, 6)
+	bind(av, "BackgroundColor3", "Hover") corner(av, 14)
 	local dn = label(foot, LP.DisplayName, 12, "Text", E.FontWeight.SemiBold)
-	dn.Position, dn.Size, dn.TextTruncate = UDim2.fromOffset(42, 5), UDim2.fromOffset(150, 14), E.TextTruncate.AtEnd
+	dn.Position, dn.Size, dn.TextTruncate = UDim2.fromOffset(52, 8), UDim2.fromOffset(150, 15), E.TextTruncate.AtEnd
 	local un = label(foot, "@" .. LP.Name, 10, "Sub")
-	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(42, 19), UDim2.fromOffset(150, 11), E.TextTruncate.AtEnd
-	local fps = label(foot, "", 10, "Sub")
-	fps.FontFace = mono()
-	fps.AnchorPoint, fps.Position, fps.Size, fps.TextXAlignment = Vector2.new(1, .5), UDim2.new(1, -14, .5, 1), UDim2.fromOffset(70, 14), E.TextXAlignment.Right
+	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(52, 24), UDim2.fromOffset(150, 12), E.TextTruncate.AtEnd
+	local fps = label(foot, "", 11, "Sub")
+	fps.AnchorPoint, fps.Position, fps.Size, fps.TextXAlignment = Vector2.new(1, .5), UDim2.new(1, -18, .5, 1), UDim2.fromOffset(120, 14), E.TextXAlignment.Right
 	-- penghitung fps hanya jalan saat UI terbuka
 	local acc, frames = 0, 0
 	win:_c(RunService.Heartbeat, function(dt)
 		if not win.Open then return end
 		acc += dt frames += 1
 		if acc >= .5 then
-			fps.Text = math.floor(frames / acc + .5) .. " fps"
+			local ping = ""
+			local okp, pv = pcall(function() return LP:GetNetworkPing() end)
+			if okp and type(pv) == "number" and pv > 0 then ping = "  " .. math.floor(pv * 1000 + .5) .. " ms" end
+			fps.Text = math.floor(frames / acc + .5) .. " fps" .. ping
 			acc, frames = 0, 0
 		end
 	end)
@@ -1659,53 +1862,63 @@ function Senja:CreateWindow(o)
 			local d = (m.Position - ds) / scale.Scale
 			win.Home = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
 			root.Position = win.Home
+		end, function()
+			win:_clamp()
+			if win.Live then pref("wx", win.Home.X.Offset) pref("wy", win.Home.Y.Offset) end
 		end)
 	end)
 
 	-- garis di bawah window: tarik ke atas untuk menutup
 	local grab = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, 1),
-		Position = UDim2.new(.5, 0, 1, 0), Size = UDim2.fromOffset(220, 22), ZIndex = 20, Parent = main})
-	local gp = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(.5, 0, 1, -5), Size = UDim2.fromOffset(32, 3), Parent = grab})
+		Position = UDim2.new(.5, 0, 1, 0), Size = UDim2.fromOffset(220, 26), ZIndex = 20, Parent = main})
+	local gp = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(.5, 0, 1, -7), Size = UDim2.fromOffset(34, 3), Parent = grab})
 	bind(gp, "BackgroundColor3", "Sub") corner(gp, 2)
 	gp.BackgroundTransparency = .55
 	win.GrabFx = {pill = gp}
-	grab.MouseEnter:Connect(function() tw(gp, {Size = UDim2.fromOffset(46, 3), BackgroundTransparency = .1}, .1) end)
-	grab.MouseLeave:Connect(function() tw(gp, {Size = UDim2.fromOffset(32, 3), BackgroundTransparency = .55}, .12) end)
+	grab.MouseEnter:Connect(function() tw(gp, {Size = UDim2.fromOffset(52, 3), BackgroundTransparency = .1}, .1) end)
+	grab.MouseLeave:Connect(function() tw(gp, {Size = UDim2.fromOffset(34, 3), BackgroundTransparency = .55}, .12) end)
 	win.Grab = grab
 	swipeClose(win, grab)
 
-	-- tombol bulat melayang: ketuk = buka/tutup UI, seret = pindah (menempel ke sisi layar saat dilepas)
-	local fab = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(34, 100),
-		Size = UDim2.fromOffset(42, 42), ZIndex = 60, Parent = gui})
-	bind(fab, "BackgroundColor3", "Bg") corner(fab, 21)
-	local fst = stroke(fab, "StrokeHi", 1, 0)
+	-- tombol bulat melayang: ketuk = buka/tutup UI, seret = pindah (menempel ke sisi layar saat dilepas). posisinya diingat.
+	local fvp = workspace.CurrentCamera.ViewportSize
+	local fx0p = math.clamp(type(P.fx) == "number" and P.fx or 36, 36, math.max(36, fvp.X - 36))
+	local fy0p = math.clamp(type(P.fy) == "number" and P.fy or 100, 36, math.max(36, fvp.Y - 36))
+	local fabRight = fx0p > fvp.X / 2
+	local fab = new("TextButton", {Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(fx0p, fy0p),
+		Size = UDim2.fromOffset(46, 46), ZIndex = 60, Parent = gui})
+	bind(fab, "BackgroundColor3", "Bg") corner(fab, 23)
+	local fst = stroke(fab, "Stroke", 1.5, 0)
 	local fus = new("UIScale", {Parent = fab})
-	local fic = img(fab, o.Icon or "logo", 20, "Accent")
+	local fic = img(fab, o.Icon or "logo", 22, "Accent")
 	fic.AnchorPoint, fic.Position, fic.ZIndex = Vector2.new(.5, .5), UDim2.fromScale(.5, .5), 61
 	local fics = new("UIScale", {Parent = fic})
 	win.Fab, win.FabStroke, win.FabScale = fab, fst, fus
 	local fd = false
-	fab.MouseEnter:Connect(function() if not fd then tw(fus, {Scale = win.Open and .94 or 1.06}, .1) end end)
-	fab.MouseLeave:Connect(function() if not fd then tw(fus, {Scale = win.Open and .88 or 1}, .12) end end)
+	fab.MouseEnter:Connect(function() if not fd then tw(fus, {Scale = win.Open and .92 or 1.08}, .1) end end)
+	fab.MouseLeave:Connect(function() if not fd then tw(fus, {Scale = win.Open and .86 or 1}, .12) end end)
 	fab.InputBegan:Connect(function(i)
 		if fd or not isPtr(i) then return end
 		fd = true
 		local moved, fx0, fp0 = false, i.Position, fab.Position
-		tw(fus, {Scale = .92}, .06)
+		tw(fus, {Scale = .9}, .06)
 		ptrDrag(function(m)
 			local d = m.Position - fx0
 			if not moved and d.Magnitude > 6 then moved = true end
 			if moved then fab.Position = UDim2.fromOffset(fp0.X.Offset + d.X, fp0.Y.Offset + d.Y) end
 		end, function()
 			fd = false
-			tw(fus, {Scale = win.Open and .88 or 1}, .16)
+			tw(fus, {Scale = win.Open and .86 or 1}, .16)
 			if not moved then
 				win:Toggle()
 				return
 			end
 			local v = workspace.CurrentCamera.ViewportSize
 			local x, y = fab.Position.X.Offset, fab.Position.Y.Offset
-			tw(fab, {Position = UDim2.fromOffset(x < v.X / 2 and 34 or v.X - 34, math.clamp(y, 34, v.Y - 34))}, .26, Qn)
+			local nx, ny = x < v.X / 2 and 36 or v.X - 36, math.clamp(y, 36, v.Y - 36)
+			fabRight = nx > v.X / 2
+			tw(fab, {Position = UDim2.fromOffset(nx, ny)}, .26, Qn)
+			if win.Live then pref("fx", nx) pref("fy", ny) end
 		end)
 	end)
 
@@ -1719,6 +1932,20 @@ function Senja:CreateWindow(o)
 			task.wait(10)
 			if win.Open then breathe(logo, logos) end
 			if fab.Visible then breathe(fic, fics) end
+		end
+	end)
+
+	-- layar diputar / berubah ukuran: window dan tombol bulat ikut menyesuaikan
+	win:_c(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
+		win:_fit()
+		local v = workspace.CurrentCamera.ViewportSize
+		fab.Position = UDim2.fromOffset(fabRight and v.X - 36 or 36, math.clamp(fab.Position.Y.Offset, 36, math.max(36, v.Y - 36)))
+	end)
+	-- simpan otomatis config (hanya aktif kalau "Muat & simpan otomatis" menyala dan Win:AutoLoad() sudah dipanggil)
+	task.spawn(function()
+		while gui.Parent do
+			task.wait(15)
+			win:_autoSave()
 		end
 	end)
 
@@ -1742,6 +1969,7 @@ function Senja:CreateWindow(o)
 	win.Live = true
 
 	table.insert(Senja.Windows, win)
+	win:_fit()
 	local _, cy = win:_px()
 	win:_at(cy)
 	win:Toggle(true)
@@ -1750,6 +1978,10 @@ end
 
 function Senja:Destroy()
 	for _, w in ipairs({table.unpack(self.Windows)}) do w:Destroy() end
+	if notifConn then notifConn:Disconnect() notifConn = nil end
+	notifActive = {}
+	if notifHolder and notifHolder.Parent then notifHolder.Parent:Destroy() end
+	notifHolder = nil
 end
 
 return Senja
@@ -1759,7 +1991,7 @@ end)()
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
 	Subtitle = "build 2.4",
-	Theme = "Senja",            -- Senja | Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua | Salju
+	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
 
@@ -1802,6 +2034,8 @@ local v = Visual:AddSection("Warna")
 v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
 
 -- pengaturan (tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk) sudah bawaan: tombol gerigi di header
+
+Win:AutoLoad()   -- muat config otomatis (kalau diaktifkan di Pengaturan). taruh di akhir, setelah semua elemen dibuat
 
 Senja:Notify({Title = "Senja Hub dimuat", Content = "build 2.4", Type = "success", Duration = 4})
 Win:Dialog({Title = "Selamat datang", Content = "Ketuk tombol bulat di kiri untuk membuka/menutup UI, atau tekan RightShift.", Buttons = {{Title = "Oke", Primary = true}}})
