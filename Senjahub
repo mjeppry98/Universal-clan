@@ -1,4 +1,4 @@
--- Senja Hub 2.4 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.4.1 | paste & execute langsung di executor (library + contoh jadi satu)
 --
 -- API ringkas
 --   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon})
@@ -16,7 +16,7 @@
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.4.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.4.1", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 -- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
 do
@@ -702,11 +702,13 @@ function Box:AddToggle(o)
 end
 
 function Box:AddSlider(o)
-	local c = self:_row(o, 64)
+	local c = self:_row(o, 84)
 	local mn, mx, inc = o.Min or 0, o.Max or 100, o.Increment or 1
 	local obj = {Type = "Slider", Value = mn}
-	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(58, 24), Text = "",
+	local vb = new("TextBox", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, 0, .5, 0), Size = UDim2.fromOffset(0, 24), AutomaticSize = AX, Text = "",
 		ClearTextOnFocus = false, TextSize = 12, FontFace = font(E.FontWeight.SemiBold), Parent = c.row})
+	new("UISizeConstraint", {MinSize = Vector2.new(58, 24), MaxSize = Vector2.new(120, 24), Parent = vb})
+	new("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = vb})
 	bind(vb, "BackgroundColor3", "Bg") bind(vb, "TextColor3", "Text") corner(vb, 12)
 	local barh = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 2, Active = true, Parent = c.col})
 	local track = new("Frame", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 0, 0, 17), Size = UDim2.new(1, 0, 0, 6), Parent = barh})
@@ -893,7 +895,15 @@ function Box:AddKeybind(o)
 	local kl = label(btn, "", 12, "Text")
 	kl.Size, kl.TextXAlignment = UDim2.fromScale(1, 1), E.TextXAlignment.Center
 	local listening = false
-	local function show() kl.Text = obj.Key == E.KeyCode.Unknown and "none" or obj.Key.Name end
+	local short = {LeftShift = "LShift", RightShift = "RShift", LeftControl = "LCtrl", RightControl = "RCtrl", LeftAlt = "LAlt", RightAlt = "RAlt",
+		Backspace = "Bksp", Return = "Enter", Escape = "Esc", CapsLock = "Caps", PageUp = "PgUp", PageDown = "PgDn", Insert = "Ins", Delete = "Del",
+		Backquote = "`", LeftBracket = "[", RightBracket = "]", Semicolon = ";", Quote = "'", Comma = ",", Period = ".", Slash = "/", BackSlash = "\\",
+		Minus = "-", Equals = "=", Zero = "0", One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9"}
+	kl.TextTruncate = E.TextTruncate.AtEnd
+	local function show()
+		local n = obj.Key.Name
+		kl.Text = obj.Key == E.KeyCode.Unknown and "none" or (short[n] or n:gsub("^Keypad", "Kp"))
+	end
 	function obj:Set(k, silent)
 		if type(k) == "string" then
 			local okk, kc = pcall(function() return E.KeyCode[k] end)
@@ -1450,7 +1460,7 @@ function Window:Dialog(o)
 	local ov = new("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 100, Parent = self.Main})
 	corner(ov, 20)
 	tw(ov, {BackgroundTransparency = .4}, .12)
-	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(320, 0), AutomaticSize = AY, Parent = ov})
+	local card = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(math.clamp(self.Root.Size.X.Offset - 32, 200, 320), 0), AutomaticSize = AY, Parent = ov})
 	bind(card, "BackgroundColor3", "Surface") corner(card, 20) stroke(card, "Stroke", 1, 0) pad(card, 20, 20, 20, 16)
 	local us = new("UIScale", {Scale = .94, Parent = card})
 	tw(us, {Scale = 1}, .2, Qn)
@@ -1793,6 +1803,7 @@ function Senja:CreateWindow(o)
 	local function expand(v)
 		if expanded == v then return end
 		expanded = v
+		t2.Visible = not v
 		if v then sb.Visible = true end
 		sbtn.Visible = not v
 		tw(sbox, {Size = UDim2.fromOffset(v and 150 or 28, 28)}, .22, Qn)
