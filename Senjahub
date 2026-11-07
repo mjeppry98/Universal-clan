@@ -1097,7 +1097,7 @@ end
 local Window = {}
 Window.__index = Window
 
-local RAIL, TABH, TABP, SUBH = 72, 50, 4, 32
+local RAIL, ROWH, SUBH = 150, 34, 30
 
 function Window:_c(sig, fn)
 	local c = sig:Connect(fn)
@@ -1199,8 +1199,22 @@ function Window:SetMinimized(v)
 end
 function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
+function Window:_dock()
+	if not self.Docked then return end
+	local w = self.Root.Size.X.Offset * self.UserScale
+	local d = self.Dock
+	if d == "Right" then
+		self.Home = UDim2.new(1, -(w / 2 + 16), .5, 0)
+	elseif d == "Left" then
+		self.Home = UDim2.new(0, w / 2 + 16, .5, 0)
+	else
+		self.Home = UDim2.fromScale(.5, .5)
+	end
+end
+
 function Window:ResetPos()
-	self.Home = UDim2.fromScale(.5, .5)
+	self.Docked = true
+	self:_dock()
 	pref("wx", nil) pref("wy", nil)
 	if self.Open then
 		self:_stop()
@@ -1224,10 +1238,14 @@ function Window:_fit()
 	local v = workspace.CurrentCamera.ViewportSize
 	local k = self.UserScale
 	self.Root.Size = UDim2.fromOffset(math.min(self.BaseSize.X, (v.X - 24) / k), math.min(self.BaseSize.Y, (v.Y - 24) / k))
+	self:_dock()
 	self:_clamp()
 	if not self.Open then
 		local _, cy = self:_px()
 		self:_at(cy)
+	elseif self.Docked then
+		self:_stop()
+		tw(self.Root, {Position = self.Home}, .2, Qn)
 	end
 end
 
@@ -1283,14 +1301,14 @@ function Window:Select(tab)
 	if not tab.IsSettings then self.LastTab = tab end
 	local dir = (old and old.Index > tab.Index) and -1 or 1
 	if old then
-		old._paint(false)
 		old.Group.Visible = false
+		self:_paintTab(old)
 	end
-	tab._paint(true)
+	self:_paintTab(tab)
+	if tab.Subs then self:_group(tab, true) end
 	tab.Group.Position, tab.Group.Visible = UDim2.fromOffset(0, 24 * dir), true
 	if tab._tw then tab._tw:Cancel() end
 	tab._tw = tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
-	self:_moveInd(old ~= nil)
 	self:_filter(self.SearchBox.Text)
 	local pg = self:_page(tab)
 	for _, s in ipairs(pg.Secs) do s.Refresh() end
@@ -1314,31 +1332,6 @@ function Window:_filter(q)
 	end
 end
 
-function Window:_layoutTabs()
-	local n = #self.Tabs
-	for i, t in ipairs(self.Tabs) do
-		t.Index = i
-		t.Btn.Size = UDim2.new(1, 0, 0, TABH)
-		t.Btn.Position = UDim2.fromOffset(0, (i - 1) * (TABH + TABP))
-	end
-	self.Ind.Size = UDim2.new(1, 0, 0, TABH)
-	self.Nav.CanvasSize = UDim2.fromOffset(0, math.max(0, n * (TABH + TABP) - TABP))
-	self:_moveInd(false)
-end
-function Window:_moveInd(anim)
-	local t = self.Current
-	if not t then return end
-	if t.IsSettings then
-		tw(self.Ind, {BackgroundTransparency = 1}, .12)
-		return
-	end
-	local pos = UDim2.fromOffset(0, (t.Index - 1) * (TABH + TABP))
-	local hidden = self.Ind.BackgroundTransparency > .5
-	self.Ind.Visible = true
-	if anim and not hidden then tw(self.Ind, {Position = pos}, .26, Qn) else self.Ind.Position = pos end
-	tw(self.Ind, {BackgroundTransparency = 0}, .12)
-end
-
 function Window:_newPage(parent)
 	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = parent or self.Pages})
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
@@ -1356,22 +1349,18 @@ function Window:_page(t)
 	return t and (t.Sub or t)
 end
 
-function Window:_layoutSubs(tab)
-	local n = #tab.Subs
-	for i, s in ipairs(tab.Subs) do
-		s.Index = i
-		s.Btn.Size = UDim2.new(1 / n, 0, 1, 0)
-		s.Btn.Position = UDim2.new((i - 1) / n, 0, 0, 0)
+function Window:_paintTab(tab, inst)
+	tab._paint(self.Current == tab, inst)
+	if tab.Subs then
+		for _, s in ipairs(tab.Subs) do s._paint(self.Current == tab and tab.Sub == s, inst) end
 	end
-	tab.SubInd.Size = UDim2.new(1 / n, -4, 1, 0)
-	self:_moveSubInd(tab, false)
 end
-function Window:_moveSubInd(tab, anim)
-	local s = tab.Sub
-	if not s then return end
-	local pos = UDim2.new((s.Index - 1) / #tab.Subs, 2, 0, 0)
-	tab.SubInd.Visible = true
-	if anim then tw(tab.SubInd, {Position = pos}, .26, Qn) else tab.SubInd.Position = pos end
+function Window:_group(tab, v, inst)
+	if not tab.Subs then return end
+	tab.GOpen = v and true or false
+	local h = #tab.Subs * (SUBH + 2)
+	tw(tab.GHost, {Size = UDim2.new(1, 0, 0, tab.GOpen and h or 0)}, inst and 0 or .2, Qn)
+	tw(tab.GArrow, {Rotation = tab.GOpen and 0 or -90}, inst and 0 or .18)
 end
 function Window:_selectSub(tab, sub)
 	if tab.Sub == sub then return end
@@ -1379,16 +1368,13 @@ function Window:_selectSub(tab, sub)
 	local old = tab.Sub
 	tab.Sub = sub
 	local dir = (old and old.Index > sub.Index) and -1 or 1
-	if old then
-		old._paint(false)
-		old.Group.Visible = false
-	end
-	sub._paint(true)
+	if old then old.Group.Visible = false end
 	sub.Group.Position, sub.Group.Visible = UDim2.fromOffset(24 * dir, 0), true
 	if sub._tw then sub._tw:Cancel() end
 	sub._tw = tw(sub.Group, {Position = UDim2.new()}, .22, Qn)
-	self:_moveSubInd(tab, old ~= nil)
+	self:_paintTab(tab)
 	if self.Current == tab then
+		self:_group(tab, true)
 		self:_filter(self.SearchBox.Text)
 		for _, s in ipairs(sub.Secs) do s.Refresh() end
 		task.defer(function() for _, s in ipairs(sub.Secs) do s.Refresh() end end)
@@ -1397,32 +1383,42 @@ end
 function Window:_addSub(tab, o)
 	if type(o) == "string" then o = {Title = o} end
 	local win = self
-	if not tab.SubBar then
+	if not tab.Subs then
 		tab.Scroll.Visible = false
 		tab.Subs = {}
-		local bar = new("Frame", {Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -28, 0, SUBH), Parent = tab.Group})
-		bind(bar, "BackgroundColor3", "Side") corner(bar, SUBH / 2)
-		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = bar})
-		local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Parent = inner})
-		bind(ind, "BackgroundColor3", "Track") corner(ind, (SUBH - 6) / 2)
-		local host = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, SUBH + 10),
-			Size = UDim2.new(1, 0, 1, -(SUBH + 10)), Parent = tab.Group})
-		tab.SubBar, tab.SubInner, tab.SubInd, tab.SubHost = bar, inner, ind, host
+		tab.GArrow.Visible = true
+		tab._paint(win.Current == tab, true)
 	end
-	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = tab.SubInner})
+	local n = #tab.Subs + 1
+	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, SUBH), LayoutOrder = n, Parent = tab.GList})
+	bind(btn, "BackgroundColor3", "Track") corner(btn, 10)
 	local lb = label(btn, o.Title or "Sub", 12, "Sub", E.FontWeight.SemiBold)
-	lb.Size, lb.TextXAlignment, lb.TextTruncate = UDim2.fromScale(1, 1), E.TextXAlignment.Center, E.TextTruncate.AtEnd
-	local sub = self:_newPage(tab.SubHost)
-	sub.Btn, sub.Lb, sub.Title, sub.Owner = btn, lb, o.Title or "Sub", tab
+	lb.Position, lb.Size, lb.TextTruncate = UDim2.fromOffset(12, 0), UDim2.new(1, -20, 1, 0), E.TextTruncate.AtEnd
+	local sub = self:_newPage(tab.Group)
+	sub.Btn, sub.Lb, sub.Title, sub.Owner, sub.Index = btn, lb, o.Title or "Sub", tab, n
+	local function rest() return (win.Current == tab and tab.Sub == sub) and 0 or 1 end
 	sub._paint = function(sel, inst)
-		tw(lb, {TextColor3 = sel and Cur.Text or Cur.Sub}, inst and 0 or .12)
+		local t = inst and 0 or .12
+		tw(lb, {TextColor3 = sel and Cur.Text or Cur.Sub}, t)
+		tw(btn, {BackgroundTransparency = sel and 0 or 1}, t)
 	end
-	btn.MouseEnter:Connect(function() if tab.Sub ~= sub then tw(lb, {TextColor3 = Cur.Text}, .08) end end)
-	btn.MouseLeave:Connect(function() if tab.Sub ~= sub then tw(lb, {TextColor3 = Cur.Sub}, .12) end end)
-	btn.MouseButton1Click:Connect(function() win:_selectSub(tab, sub) end)
-	Hooks[#Hooks + 1] = function() sub._paint(tab.Sub == sub, true) end
+	btn.MouseEnter:Connect(function()
+		if rest() == 1 then
+			tw(btn, {BackgroundTransparency = .6}, .08)
+			tw(lb, {TextColor3 = Cur.Text}, .08)
+		end
+	end)
+	btn.MouseLeave:Connect(function()
+		tw(btn, {BackgroundTransparency = rest()}, .12)
+		if rest() == 1 then tw(lb, {TextColor3 = Cur.Sub}, .12) end
+	end)
+	btn.MouseButton1Click:Connect(function()
+		if win.Current ~= tab then win:Select(tab) end
+		win:_selectSub(tab, sub)
+	end)
+	Hooks[#Hooks + 1] = function() sub._paint(win.Current == tab and tab.Sub == sub, true) end
 	table.insert(tab.Subs, sub)
-	self:_layoutSubs(tab)
+	if tab.GOpen then self:_group(tab, true) end
 	if #tab.Subs == 1 then self:_selectSub(tab, sub) end
 	return sub
 end
@@ -1431,38 +1427,71 @@ function Box:AddSubTab(o)
 	return self.Win:_addSub(self, o)
 end
 
+function Window:AddCategory(o)
+	if type(o) == "string" then o = {Title = o} end
+	self._ord += 1
+	local h = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = self._ord, Parent = self.Nav})
+	local l = label(h, o.Title or "", 10, "Sub", E.FontWeight.SemiBold)
+	l.Position, l.Size, l.TextTruncate = UDim2.fromOffset(10, 12), UDim2.new(1, -20, 0, 14), E.TextTruncate.AtEnd
+	local obj = {}
+	function obj:SetTitle(t) l.Text = tostring(t) end
+	return obj
+end
+
 function Window:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
 	local win = self
-	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = self.Nav})
+	self._ord += 1
+	local holder = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = self._ord, Parent = self.Nav})
+	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = holder})
+	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, ROWH), LayoutOrder = 1, Parent = holder})
+	bind(btn, "BackgroundColor3", "Track") corner(btn, 12)
 	local cont = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
 		Size = UDim2.fromScale(1, 1), Parent = btn})
-	new("UIListLayout", {FillDirection = E.FillDirection.Vertical, VerticalAlignment = E.VerticalAlignment.Center,
-		HorizontalAlignment = E.HorizontalAlignment.Center, Padding = UDim.new(0, 4), SortOrder = E.SortOrder.LayoutOrder, Parent = cont})
 	local cus = new("UIScale", {Parent = cont})
-	local ic = img(cont, o.Icon or "star", 18, "Sub")
-	ic.LayoutOrder = 1
-	local lb = label(cont, o.Title or "Tab", 10, "Sub", E.FontWeight.SemiBold)
-	lb.Size, lb.LayoutOrder, lb.TextXAlignment, lb.TextTruncate = UDim2.new(1, -4, 0, 12), 2, E.TextXAlignment.Center, E.TextTruncate.AtEnd
+	local ic = img(cont, o.Icon or "star", 16, "Sub")
+	ic.AnchorPoint, ic.Position = Vector2.new(0, .5), UDim2.new(0, 12, .5, 0)
+	local lb = label(cont, o.Title or "Tab", 12, "Sub", E.FontWeight.SemiBold)
+	lb.Position, lb.Size, lb.TextTruncate = UDim2.fromOffset(36, 0), UDim2.new(1, -60, 1, 0), E.TextTruncate.AtEnd
+	local ar = img(cont, "chevron", 11, "Sub")
+	ar.AnchorPoint, ar.Position, ar.Rotation, ar.Visible = Vector2.new(1, .5), UDim2.new(1, -10, .5, 0), -90, false
+	local gh = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Size = UDim2.new(1, 0, 0, 0), LayoutOrder = 2, Parent = holder})
+	local gline = new("Frame", {Position = UDim2.fromOffset(19, 2), Size = UDim2.new(0, 1, 1, -6), Parent = gh})
+	bind(gline, "BackgroundColor3", "Track")
+	local gl = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = gh})
+	pad(gl, 28, 0, 0, 0)
+	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = gl})
 
 	local tab = self:_newPage()
-	tab.Btn, tab.Lb, tab.Title = btn, lb, o.Title or "Tab"
+	tab.Btn, tab.Lb, tab.Title, tab.Index = btn, lb, o.Title or "Tab", self._ord
+	tab.GHost, tab.GList, tab.GArrow, tab.GOpen = gh, gl, ar, false
+	local function rest() return (win.Current == tab and not tab.Subs) and 0 or 1 end
 	tab._paint = function(sel, inst)
 		local t = inst and 0 or .12
 		tw(ic, {ImageColor3 = sel and Cur.Accent or Cur.Sub}, t)
 		tw(lb, {TextColor3 = sel and Cur.Text or Cur.Sub}, t)
+		tw(btn, {BackgroundTransparency = (sel and not tab.Subs) and 0 or 1}, t)
 	end
-	btn.MouseEnter:Connect(function() if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Text}, .08) end end)
+	btn.MouseEnter:Connect(function()
+		if rest() == 1 then tw(btn, {BackgroundTransparency = .6}, .08) end
+		if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Text}, .08) end
+	end)
 	btn.MouseLeave:Connect(function()
+		tw(btn, {BackgroundTransparency = rest()}, .12)
 		if win.Current ~= tab then tw(lb, {TextColor3 = Cur.Sub}, .12) end
 		tw(cus, {Scale = 1}, .12)
 	end)
-	btn.MouseButton1Down:Connect(function() tw(cus, {Scale = .94}, .06) end)
+	btn.MouseButton1Down:Connect(function() tw(cus, {Scale = .96}, .06) end)
 	btn.MouseButton1Up:Connect(function() tw(cus, {Scale = 1}, .16) end)
-	btn.MouseButton1Click:Connect(function() win:Select(tab) end)
-	Hooks[#Hooks + 1] = function() tab._paint(win.Current == tab) end
+	btn.MouseButton1Click:Connect(function()
+		if tab.Subs and win.Current == tab then
+			win:_group(tab, not tab.GOpen)
+		else
+			win:Select(tab)
+		end
+	end)
+	Hooks[#Hooks + 1] = function() win:_paintTab(tab, true) end
 	table.insert(self.Tabs, tab)
-	self:_layoutTabs()
 	if #self.Tabs == 1 then self:Select(tab) end
 	return tab
 end
@@ -1650,7 +1679,7 @@ function Window:_buildSettings(tab)
 			Senja:Notify({Title = "Executor has no setclipboard", Type = "error"})
 		end
 	end})
-	misc:AddButton({Title = "Reset window position", Description = "return to the center of the screen", Icon = "target", Callback = function() win:ResetPos() end})
+	misc:AddButton({Title = "Reset window position", Description = "return the window to its default position", Icon = "target", Callback = function() win:ResetPos() end})
 	misc:AddButton({Title = "Close UI", Description = "remove this window entirely", Icon = "x", Callback = function() win:_confirmClose() end})
 	return tab
 end
@@ -1733,14 +1762,16 @@ function Senja:CreateWindow(o)
 		if okk and kc and kc ~= E.KeyCode.Unknown then tkey = kc end
 	end
 	local usc = type(P.scale) == "number" and math.clamp(P.scale, 70, 130) / 100 or 1
+	local dock = tostring(o.Position or "Right"):lower()
+	dock = dock == "left" and "Left" or (dock == "center" and "Center" or "Right")
 	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, Minimized = false, Live = false, UserScale = usc, ToggleKey = tkey,
-		Home = UDim2.fromScale(.5, .5),
+		Home = UDim2.fromScale(.5, .5), Dock = dock, Docked = true, _ord = 0,
 		_tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
 	local gui = new("ScreenGui", {Name = o.Name or "SenjaUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(gui)
 	local dim = new("Frame", {BackgroundColor3 = BLACK, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui})
 	local vp = workspace.CurrentCamera.ViewportSize
-	local sz = o.Size or Vector2.new(640, 440)
+	local sz = o.Size or Vector2.new(680, 440)
 	win.BaseSize = sz
 	local root = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = win.Home,
 		Size = UDim2.fromOffset(math.min(sz.X, vp.X - 24), math.min(sz.Y, vp.Y - 24)), Parent = gui})
@@ -1824,11 +1855,10 @@ function Senja:CreateWindow(o)
 	local FOOT = 46
 	local nav = new("Frame", {Position = UDim2.fromOffset(10, 56), Size = UDim2.new(0, RAIL, 1, -(56 + FOOT + 8)), Parent = main})
 	bind(nav, "BackgroundColor3", "Side") corner(nav, 18)
-	local navIn = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 1, -8),
-		CanvasSize = UDim2.new(), ScrollBarThickness = 0, ScrollingDirection = E.ScrollingDirection.Y, Parent = nav})
-	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, 0, 0, TABH), Position = UDim2.fromOffset(0, 0), Parent = navIn})
-	bind(ind, "BackgroundColor3", "Track") corner(ind, 14)
-	win.Nav, win.Ind, win.NavFrame = navIn, ind, nav
+	local navIn = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 1, -12),
+		AutomaticCanvasSize = AY, CanvasSize = UDim2.new(), ScrollBarThickness = 0, ScrollingDirection = E.ScrollingDirection.Y, Parent = nav})
+	new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, Parent = navIn})
+	win.Nav, win.NavFrame = navIn, nav
 
 	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(RAIL + 10, 52), Size = UDim2.new(1, -(RAIL + 10), 1, -(52 + FOOT)), Parent = main})
 	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
@@ -1873,6 +1903,7 @@ function Senja:CreateWindow(o)
 		win:_stop()
 		ptrDrag(function(m)
 			local d = (m.Position - ds) / scale.Scale
+			win.Docked = false
 			win.Home = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
 			root.Position = win.Home
 		end, function()
@@ -1999,7 +2030,9 @@ local Win = Senja:CreateWindow({
 	ToggleKey = Enum.KeyCode.RightShift,
 })
 
+Win:AddCategory("General")
 local MainTab = Win:AddTab({Title = "Main", Icon = "home"})
+Win:AddCategory("Features")
 local Combat = Win:AddTab({Title = "Combat", Icon = "sword"})
 local Visual = Win:AddTab({Title = "Visual", Icon = "eye"})
 
