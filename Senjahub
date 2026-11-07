@@ -1,8 +1,9 @@
--- Senja Hub 2.5.0 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.6.0 | paste & execute langsung di executor (library + contoh jadi satu)
 --
 -- API ringkas
 --   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon})
 --   local tab = Win:AddTab({Title, Icon})         local sec = tab:AddSection({Title, Open})
+--   local sub = tab:AddSubTab({Title})            sub tab di dalam tab, dipakai seperti tab (sub:AddSection). tab yang punya sub tab hanya menampilkan sub tab-nya
 --   sec:AddToggle / AddSlider / AddButton / AddInput / AddDropdown / AddKeybind / AddColorPicker / AddLabel / AddDivider
 --   opsi umum: Title, Description, Flag (dipakai config), Default, Callback
 --   semua elemen: :Set() :Get() :SetTitle() :SetDescription() :SetVisible() :SetEnabled() :Destroy()
@@ -16,7 +17,7 @@
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.5.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.6.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 -- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
 do
@@ -569,7 +570,7 @@ local function deco(obj, c)
 	end
 	function obj:SetVisible(v)
 		item.hidden = not v
-		if win.Current == c.owner.Tab then win:_filter(win.SearchBox.Text) else c.h.Visible = v and true or false end
+		if win:_page(win.Current) == c.owner.Tab then win:_filter(win.SearchBox.Text) else c.h.Visible = v and true or false end
 	end
 	local blk
 	function obj:SetEnabled(v)
@@ -1152,7 +1153,7 @@ local Window = {}
 Window.__index = Window
 
 -- rail tab di kiri: lebar rail, tinggi satu tombol tab, jarak antar tombol
-local RAIL, TABH, TABP = 56, 50, 4
+local RAIL, TABH, TABP, SUBH = 72, 50, 4, 32
 
 function Window:_c(sig, fn)
 	local c = sig:Connect(fn)
@@ -1361,15 +1362,16 @@ function Window:Select(tab)
 	tab._tw = tw(tab.Group, {Position = UDim2.new()}, .22, Qn)
 	self:_moveInd(old ~= nil)
 	self:_filter(self.SearchBox.Text)
-	for _, s in ipairs(tab.Secs) do s.Refresh() end
-	task.defer(function() for _, s in ipairs(tab.Secs) do s.Refresh() end end)
+	local pg = self:_page(tab)
+	for _, s in ipairs(pg.Secs) do s.Refresh() end
+	task.defer(function() for _, s in ipairs(pg.Secs) do s.Refresh() end end)
 end
 
 -- saring baris berdasarkan kata kunci. section tanpa hasil disembunyikan,
 -- section tertutup yang punya hasil dibuka otomatis.
 function Window:_filter(q)
 	q = q:lower()
-	local tab = self.Current
+	local tab = self:_page(self.Current)
 	if not tab then return end
 	local hit = {}
 	for _, it in ipairs(tab.Items) do
@@ -1413,8 +1415,8 @@ function Window:_moveInd(anim)
 end
 
 -- halaman berupa Frame biasa (bukan CanvasGroup) supaya tidak ada render ke tekstur tiap frame
-function Window:_newPage()
-	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = self.Pages})
+function Window:_newPage(parent)
+	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = parent or self.Pages})
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
 		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
 	bind(sc, "ScrollBarImageColor3", "Track")
@@ -1426,6 +1428,90 @@ function Window:_newPage()
 	local tab = newBox(self, nil, body)
 	tab.Tab, tab.Items, tab.Group, tab.Secs, tab.Scroll = tab, {}, grp, {}, sc
 	return tab
+end
+
+-- halaman aktif sebuah tab: kalau tab punya sub tab, halamannya adalah sub tab yang sedang dipilih
+function Window:_page(t)
+	return t and (t.Sub or t)
+end
+
+-- sub tab: bar kecil di atas halaman tab. tiap sub tab punya halaman dan scroll sendiri di bawah bar.
+-- semua tombol sub tab berbagi lebar sama; indikator bergeser di antaranya.
+function Window:_layoutSubs(tab)
+	local n = #tab.Subs
+	for i, s in ipairs(tab.Subs) do
+		s.Index = i
+		s.Btn.Size = UDim2.new(1 / n, 0, 1, 0)
+		s.Btn.Position = UDim2.new((i - 1) / n, 0, 0, 0)
+	end
+	tab.SubInd.Size = UDim2.new(1 / n, -4, 1, 0)
+	self:_moveSubInd(tab, false)
+end
+function Window:_moveSubInd(tab, anim)
+	local s = tab.Sub
+	if not s then return end
+	local pos = UDim2.new((s.Index - 1) / #tab.Subs, 2, 0, 0)
+	tab.SubInd.Visible = true
+	if anim then tw(tab.SubInd, {Position = pos}, .26, Qn) else tab.SubInd.Position = pos end
+end
+function Window:_selectSub(tab, sub)
+	if tab.Sub == sub then return end
+	if openDD then openDD:Close() end
+	local old = tab.Sub
+	tab.Sub = sub
+	local dir = (old and old.Index > sub.Index) and -1 or 1
+	if old then
+		old._paint(false)
+		old.Group.Visible = false
+	end
+	sub._paint(true)
+	sub.Group.Position, sub.Group.Visible = UDim2.fromOffset(24 * dir, 0), true
+	if sub._tw then sub._tw:Cancel() end
+	sub._tw = tw(sub.Group, {Position = UDim2.new()}, .22, Qn)
+	self:_moveSubInd(tab, old ~= nil)
+	if self.Current == tab then
+		self:_filter(self.SearchBox.Text)
+		for _, s in ipairs(sub.Secs) do s.Refresh() end
+		task.defer(function() for _, s in ipairs(sub.Secs) do s.Refresh() end end)
+	end
+end
+function Window:_addSub(tab, o)
+	if type(o) == "string" then o = {Title = o} end
+	local win = self
+	if not tab.SubBar then
+		-- sub tab pertama: siapkan bar di atas dan wadah halaman di bawahnya, halaman utama tab disembunyikan
+		tab.Scroll.Visible = false
+		tab.Subs = {}
+		local bar = new("Frame", {Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -28, 0, SUBH), Parent = tab.Group})
+		bind(bar, "BackgroundColor3", "Side") corner(bar, SUBH / 2)
+		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = bar})
+		local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Parent = inner})
+		bind(ind, "BackgroundColor3", "Track") corner(ind, (SUBH - 6) / 2)
+		local host = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, SUBH + 10),
+			Size = UDim2.new(1, 0, 1, -(SUBH + 10)), Parent = tab.Group})
+		tab.SubBar, tab.SubInner, tab.SubInd, tab.SubHost = bar, inner, ind, host
+	end
+	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = tab.SubInner})
+	local lb = label(btn, o.Title or "Sub", 12, "Sub", E.FontWeight.SemiBold)
+	lb.Size, lb.TextXAlignment, lb.TextTruncate = UDim2.fromScale(1, 1), E.TextXAlignment.Center, E.TextTruncate.AtEnd
+	local sub = self:_newPage(tab.SubHost)
+	sub.Btn, sub.Lb, sub.Title, sub.Owner = btn, lb, o.Title or "Sub", tab
+	sub._paint = function(sel, inst)
+		tw(lb, {TextColor3 = sel and Cur.Text or Cur.Sub}, inst and 0 or .12)
+	end
+	btn.MouseEnter:Connect(function() if tab.Sub ~= sub then tw(lb, {TextColor3 = Cur.Text}, .08) end end)
+	btn.MouseLeave:Connect(function() if tab.Sub ~= sub then tw(lb, {TextColor3 = Cur.Sub}, .12) end end)
+	btn.MouseButton1Click:Connect(function() win:_selectSub(tab, sub) end)
+	Hooks[#Hooks + 1] = function() sub._paint(tab.Sub == sub, true) end
+	table.insert(tab.Subs, sub)
+	self:_layoutSubs(tab)
+	if #tab.Subs == 1 then self:_selectSub(tab, sub) end
+	return sub
+end
+-- hanya bisa dipanggil dari tab (hasil Win:AddTab), bukan dari section atau sub tab
+function Box:AddSubTab(o)
+	assert(self.Tab == self and not self.Owner, "[Senja] AddSubTab hanya bisa dipanggil dari tab, bukan dari section atau sub tab")
+	return self.Win:_addSub(self, o)
 end
 
 function Window:AddTab(o)
@@ -2017,7 +2103,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 2.5",
+	Subtitle = "build 2.6",
 	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
@@ -2052,10 +2138,16 @@ local info = Utama:AddSection({Title = "Info", Open = false})
 info:AddLabel({Title = "Cara pakai", Description = "ketuk judul section untuk melipat/membuka. ketuk ikon kaca pembesar di kanan atas untuk mencari fitur."})
 info:AddInput({Title = "Catatan", Placeholder = "tulis apa aja", Flag = "note", Callback = function(t, enter) if enter then print(t) end end})
 
-local t = Tempur:AddSection("Target")
+-- contoh sub tab: bar kecil di atas halaman. tab yang punya sub tab hanya menampilkan sub tab-nya.
+local Aim = Tempur:AddSubTab({Title = "Aim"})
+local Filter = Tempur:AddSubTab({Title = "Filter"})
+
+local t = Aim:AddSection("Target")
 t:AddDropdown({Title = "Bagian tubuh", Values = {"Head", "HumanoidRootPart", "Torso"}, Default = "Head", Flag = "part"})
-t:AddDropdown({Title = "Filter tim", Values = {"Musuh", "Teman", "Netral", "NPC"}, Multi = true, Search = true, Flag = "tim"})
 t:AddKeybind({Title = "Aktifkan aim", Default = Enum.KeyCode.E, Mode = "Toggle", Callback = function(on) print("aim", on) end, Flag = "aimkey"})
+
+local f = Filter:AddSection("Tim")
+f:AddDropdown({Title = "Filter tim", Values = {"Musuh", "Teman", "Netral", "NPC"}, Multi = true, Search = true, Flag = "tim"})
 
 local v = Visual:AddSection("Warna")
 v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
