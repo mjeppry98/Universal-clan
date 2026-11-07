@@ -1,4 +1,4 @@
--- Senja Hub 2.6.0 | paste & execute langsung di executor (library + contoh jadi satu)
+-- Senja Hub 2.8.0 | paste & execute langsung di executor (library + contoh jadi satu)
 --
 -- API ringkas
 --   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon})
@@ -11,13 +11,14 @@
 --   Win:Show() Hide() Toggle() Minimize()    Win:SelectTab(nama|nomor)    Win:SetTitle() SetSubtitle()
 --   Win:Confirm(judul, isi, bilaYa)          Win:Dialog({Title, Content, Buttons})
 --   Win:AutoLoad()   panggil di AKHIR script: memuat config yang dipilih di Pengaturan (Muat & simpan otomatis)
+--   Win:SetBgFx(true|false)  nyalakan / matikan latar beranimasi (juga ada di Pengaturan)
 --   Win:GetSettings()  halaman pengaturan bawaan (bisa ditambah section sendiri)
 --   Senja:Notify({Title, Content, Type = "info|success|warn|error", Duration, Callback})
 --   Senja:ClearNotifications()   Senja:SetTheme(nama)   Senja:SetAccent(Color3)   Senja:Destroy()
 local Senja = (function()
 -- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
-local Senja = {Version = "2.6.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
+local Senja = {Version = "2.8.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
 -- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
 do
@@ -534,6 +535,14 @@ end
 ------------------------------------------------------------ container elemen
 -- setiap elemen berupa kartu bulat sendiri (tanpa garis tepi), jarak antar kartu kecil.
 -- section hanya judul kecil yang bisa dilipat; kartu di dalamnya ikut terlipat.
+-- kartu / panel yang dibuat sedikit tembus pandang saat latar beranimasi menyala
+local Cards = {}
+local function glass(o)
+	Cards[#Cards + 1] = o
+	o.BackgroundTransparency = Senja._cardT or 0
+	return o
+end
+
 local Box = {}
 Box.__index = Box
 local function newBox(win, tab, body) return setmetatable({Win = win, Tab = tab, Body = body, _cnt = 0}, Box) end
@@ -604,7 +613,7 @@ end
 function Box:_row(o, cw, wantHit)
 	local n = self:_n()
 	local h = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = n, Parent = self.Body})
-	bind(h, "BackgroundColor3", "Surface") corner(h, 14) pad(h, 15, 12, 15, 12)
+	bind(h, "BackgroundColor3", "Surface") corner(h, 14) pad(h, 15, 12, 15, 12) glass(h)
 	local us = new("UIScale", {Parent = h})
 	local col = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = h})
 	new("UIListLayout", {SortOrder = E.SortOrder.LayoutOrder, Parent = col})
@@ -1154,6 +1163,8 @@ Window.__index = Window
 
 -- rail tab di kiri: lebar rail, tinggi satu tombol tab, jarak antar tombol
 local RAIL, TABH, TABP, SUBH = 72, 50, 4, 32
+-- transparansi kartu saat latar beranimasi menyala (supaya latarnya terlihat samar di balik kartu)
+local CARDT = .18
 
 function Window:_c(sig, fn)
 	local c = sig:Connect(fn)
@@ -1224,12 +1235,14 @@ function Window:Toggle(v)
 	if v then
 		self.Root.Visible, self.Dim.Visible = true, true
 		self:_go(true)
+		self:_fxSync()
 	else
 		self:_go(false)
 		local first = self._tws[1]
 		first.Completed:Connect(function()
 			if self._tok == tok and not self.Open then
 				self.Root.Visible, self.Dim.Visible = false, false
+				self:_fxSync()
 			end
 		end)
 	end
@@ -1262,6 +1275,7 @@ function Window:SetMinimized(v)
 	tw(self.MainCorner, {CornerRadius = UDim.new(0, v and 26 or 20)}, .26, Qn)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .2) end
 	self.MinIcon.Image = Senja.Icon(v and "chevron" or "minus")
+	self:_fxSync()
 end
 function Window:Minimize() self:SetMinimized(not self.Minimized) end
 
@@ -1279,6 +1293,7 @@ function Window:Destroy()
 	for _, c in ipairs(self.Conns) do pcall(function() c:Disconnect() end) end
 	self._tok += 1
 	self.Open = false
+	self:_fxSync()
 	if self.Fab then self.Fab.Visible = false end
 	self:_go(false)
 	local i = table.find(Senja.Windows, self)
@@ -1483,7 +1498,7 @@ function Window:_addSub(tab, o)
 		tab.Scroll.Visible = false
 		tab.Subs = {}
 		local bar = new("Frame", {Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -28, 0, SUBH), Parent = tab.Group})
-		bind(bar, "BackgroundColor3", "Side") corner(bar, SUBH / 2)
+		bind(bar, "BackgroundColor3", "Side") corner(bar, SUBH / 2) glass(bar)
 		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3), Size = UDim2.new(1, -6, 1, -6), Parent = bar})
 		local ind = new("Frame", {Visible = false, Size = UDim2.new(1, -4, 1, 0), Parent = inner})
 		bind(ind, "BackgroundColor3", "Track") corner(ind, (SUBH - 6) / 2)
@@ -1512,6 +1527,26 @@ end
 function Box:AddSubTab(o)
 	assert(self.Tab == self and not self.Owner, "[Senja] AddSubTab hanya bisa dipanggil dari tab, bukan dari section atau sub tab")
 	return self.Win:_addSub(self, o)
+end
+
+-- latar beranimasi hanya jalan saat UI terbuka, tidak diminimalkan, dan fiturnya menyala.
+-- selain itu animasinya dijeda dan lapisannya disembunyikan, jadi tidak ada beban.
+function Window:_fxSync()
+	if self.Fx then self.Fx:Set(self.BgFx and self.Open and not self.Minimized) end
+end
+function Window:SetBgFx(on)
+	on = on and true or false
+	self.BgFx = on
+	Senja._cardT = on and CARDT or 0
+	local alive = {}
+	for _, o in ipairs(Cards) do
+		if o.Parent then
+			alive[#alive + 1] = o
+			tw(o, {BackgroundTransparency = Senja._cardT}, .2)
+		end
+	end
+	Cards = alive
+	self:_fxSync()
 end
 
 function Window:AddTab(o)
@@ -1679,6 +1714,7 @@ function Window:_buildSettings(tab)
 	tampil:AddSlider({Title = "Ukuran UI", Min = 70, Max = 130, Default = Prefs.scale or 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) P("scale", v) end})
 	tampil:AddSlider({Title = "Kecepatan animasi", Description = "makin tinggi makin cepat", Min = 50, Max = 200, Increment = 10, Default = Prefs.speed or 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v P("speed", v) end})
 	tampil:AddToggle({Title = "Redupkan latar", Description = "layar menggelap saat UI terbuka", Default = Prefs.dim ~= false, Callback = function(v) win:SetDim(v) P("dim", v) end})
+	tampil:AddToggle({Title = "Latar beranimasi", Description = "cahaya halus bergerak di belakang UI. matikan kalau terasa berat", Default = Prefs.bgfx ~= false, Callback = function(v) win:SetBgFx(v) P("bgfx", v) end})
 	tampil:AddToggle({Title = "Tombol melayang", Description = "tombol bulat untuk buka/tutup UI, bisa digeser. saat UI tertutup tombol tetap tampil", Default = Prefs.fab ~= false, Callback = function(v) win:SetFab(v) P("fab", v) end})
 	tampil:AddKeybind({Title = "Tombol buka/tutup", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k P("key", k.Name) end end})
 	tampil:AddLabel({Title = "Cara buka/tutup", Description = "ketuk tombol bulat atau tekan tombol keyboard. tombol minus di header mengecilkan window jadi header saja. tarik ke atas dari garis di bawah window untuk menutup."})
@@ -1812,6 +1848,125 @@ local function swipeClose(win, zone)
 	end)
 end
 
+------------------------------------------------------------ latar beranimasi
+-- terinspirasi video "Samurai Autumn": malam hari, bulan besar bercahaya, kabut tipis yang melayang,
+-- bintang berkelip, dan daun / kelopak kecil yang tertiup angin. semuanya digerakkan tween
+-- (jalan di sisi engine, tanpa callback per frame):
+--   1. bulan: cahaya besar lembut + cakram kecil yang "bernapas" pelan (warna mengikuti aksen tema)
+--   2. kabut: tiga cahaya lebar yang melayang pelan di bagian bawah dan tengah
+--   3. bintang: titik kecil di bagian atas yang berkelip
+--   4. daun: potongan kecil yang jatuh miring tertiup angin sambil berputar dan bergoyang
+-- cahaya (bulan dan kabut) butuh writefile + getcustomasset; kalau executor tidak punya, lapisan itu
+-- dilewati dan bintang + daun tetap jalan.
+local function glowPng(n)
+	local px = {}
+	local c = (n - 1) / 2
+	for y = 0, n - 1 do
+		for x = 0, n - 1 do
+			local d = math.sqrt((x - c) ^ 2 + (y - c) ^ 2) / (n / 2)
+			local a = math.clamp(1 - d, 0, 1)
+			a = a * a * (3 - 2 * a)
+			local i = (y * n + x) * 4
+			px[i + 1], px[i + 2], px[i + 3], px[i + 4] = 255, 255, 255, math.floor(a * 255 + .5)
+		end
+	end
+	return png(n, n, px)
+end
+
+local function buildBgFx(parent)
+	local fx = {Tweens = {}, Run = false}
+	local root = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = parent})
+	fx.Frame = root
+	local IO = E.EasingDirection.InOut
+	local rng = Random.new()
+	local src = asset("v1_glow", function() return glowPng(64) end)
+
+	-- tween bolak-balik tanpa henti; semuanya dicatat supaya bisa dijeda saat UI tertutup / diminimalkan
+	local function loop(inst, props, t)
+		local tr = TweenService:Create(inst, TweenInfo.new(t, Sine, IO, -1, true), props)
+		fx.Tweens[#fx.Tweens + 1] = tr
+		return tr
+	end
+	local function glow(size, pos, tr, key)
+		local im = new("ImageLabel", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Size = size, Position = pos,
+			Image = src, ImageTransparency = tr, Parent = root})
+		return bind(im, "ImageColor3", key)
+	end
+
+	-- 1. bulan
+	local moonPos = UDim2.fromScale(.8, .24)
+	if src ~= "" then
+		local halo = glow(UDim2.fromOffset(300, 300), moonPos, .72, "Accent")
+		loop(halo, {Size = UDim2.fromOffset(340, 340), ImageTransparency = .8}, 7)
+	end
+	local disc = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(84, 84), Position = moonPos, BackgroundTransparency = .8, Parent = root})
+	bind(disc, "BackgroundColor3", "Accent") corner(disc, 42)
+	loop(disc, {BackgroundTransparency = .88}, 7)
+
+	-- 2. kabut
+	if src ~= "" then
+		local fog = {
+			{y = .86, w = 520, h = 140, a = .28, b = .62, t = 16, tr = .88},
+			{y = .62, w = 440, h = 120, a = .70, b = .38, t = 20, tr = .90},
+			{y = .40, w = 380, h = 110, a = .25, b = .55, t = 24, tr = .92},
+		}
+		for _, f in ipairs(fog) do
+			local im = glow(UDim2.fromOffset(f.w, f.h), UDim2.fromScale(f.a, f.y), f.tr, "Text")
+			loop(im, {Position = UDim2.fromScale(f.b, f.y)}, f.t)
+		end
+	end
+
+	-- 3. bintang berkelip
+	for _ = 1, 18 do
+		local s = rng:NextInteger(1, 2)
+		local st = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(s, s),
+			Position = UDim2.fromScale(rng:NextNumber(.03, .97), rng:NextNumber(.03, .5)), BackgroundTransparency = rng:NextNumber(.35, .6), Parent = root})
+		bind(st, "BackgroundColor3", "Text") corner(st, 1)
+		loop(st, {BackgroundTransparency = .95}, rng:NextNumber(1.4, 3.6))
+	end
+
+	-- 4. daun tertiup angin: jatuh miring ke kanan, bergoyang, berputar, memudar masuk lalu keluar.
+	-- tiap daun hanya "bangun" sekali per putaran (sekitar 9-16 detik).
+	for _ = 1, 12 do
+		local w, h = rng:NextInteger(5, 8), rng:NextInteger(2, 3)
+		local holder = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 0), Parent = root})
+		local leaf = new("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(w, h), BackgroundTransparency = 1, Parent = holder})
+		bind(leaf, "BackgroundColor3", "Text") corner(leaf, 2)
+		task.spawn(function()
+			task.wait(rng:NextNumber(0, 10))
+			while root.Parent do
+				if fx.Run then
+					local x0, d = rng:NextNumber(-.1, .7), rng:NextNumber(9, 16)
+					local dirS = rng:NextInteger(0, 1) * 2 - 1
+					holder.Position = UDim2.fromScale(x0, -.04)
+					leaf.Position = UDim2.fromOffset(0, 0)
+					leaf.Rotation = rng:NextNumber(0, 180)
+					leaf.BackgroundTransparency = 1
+					local fall = TweenService:Create(holder, TweenInfo.new(d, Lin), {Position = UDim2.fromScale(x0 + rng:NextNumber(.25, .45), 1.04)})
+					local sway = TweenService:Create(leaf, TweenInfo.new(d / 6, Sine, IO, 5, true), {Position = UDim2.fromOffset(rng:NextInteger(10, 22) * dirS, 0)})
+					local spin = TweenService:Create(leaf, TweenInfo.new(d, Lin), {Rotation = leaf.Rotation + rng:NextNumber(180, 540) * dirS})
+					local fade = TweenService:Create(leaf, TweenInfo.new(d / 2, Sine, IO, 1, true), {BackgroundTransparency = rng:NextNumber(.35, .6)})
+					fall:Play() sway:Play() spin:Play() fade:Play()
+					fall.Completed:Wait()
+				else
+					task.wait(.5)
+				end
+			end
+		end)
+	end
+
+	function fx:Set(on)
+		on = on and true or false
+		if self.Run == on then return end
+		self.Run = on
+		root.Visible = on
+		for _, t in ipairs(self.Tweens) do
+			if on then t:Play() else t:Pause() end
+		end
+	end
+	return fx
+end
+
 function Senja:CreateWindow(o)
 	o = o or {}
 	-- pengaturan tersimpan dimuat dulu; kalau ada, mengalahkan nilai bawaan dari script
@@ -1843,6 +1998,11 @@ function Senja:CreateWindow(o)
 	bind(main, "BackgroundColor3", "Bg") stroke(main, "Stroke", 1, 0)
 	win.MainCorner = corner(main, 20)
 	win.Gui, win.Root, win.Scale, win.Main, win.Dim = gui, root, scale, main, dim
+
+	-- latar beranimasi: dibuat paling awal supaya berada paling bawah (di belakang header, rail tab, dan halaman)
+	win.BgFx = P.bgfx ~= false
+	Senja._cardT = win.BgFx and CARDT or 0
+	win.Fx = buildBgFx(main)
 
 	-- header
 	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), Parent = main})
@@ -1920,7 +2080,7 @@ function Senja:CreateWindow(o)
 	-- navigasi di kiri: rail vertikal, indikator bergeser naik-turun mengikuti tab yang dipilih
 	local FOOT = 46
 	local nav = new("Frame", {Position = UDim2.fromOffset(10, 56), Size = UDim2.new(0, RAIL, 1, -(56 + FOOT + 8)), Parent = main})
-	bind(nav, "BackgroundColor3", "Side") corner(nav, 18)
+	bind(nav, "BackgroundColor3", "Side") corner(nav, 18) glass(nav)
 	local navIn = new("ScrollingFrame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 1, -8),
 		CanvasSize = UDim2.new(), ScrollBarThickness = 0, ScrollingDirection = E.ScrollingDirection.Y, Parent = nav})
 	local ind = new("Frame", {Visible = false, Size = UDim2.new(1, 0, 0, TABH), Position = UDim2.fromOffset(0, 0), Parent = navIn})
@@ -2103,7 +2263,7 @@ end)()
 
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
-	Subtitle = "build 2.6",
+	Subtitle = "build 2.8",
 	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
 	ToggleKey = Enum.KeyCode.RightShift,
 })
