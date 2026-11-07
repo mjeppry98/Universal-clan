@@ -1,26 +1,7 @@
--- Senja Hub 2.10.0 | paste & execute langsung di executor (library + contoh jadi satu)
---
--- API ringkas
---   local Win = Senja:CreateWindow({Title, Subtitle, Theme, ToggleKey, Size = Vector2.new(w, h), Icon, RightFade})
---     RightFade: 0-1, seberapa transparan sisi kanan latar window (bawaan 0.3, 0 = tidak transparan)
---   local tab = Win:AddTab({Title, Icon})         local sec = tab:AddSection({Title, Open})
---   local sub = tab:AddSubTab({Title})            sub tab di dalam tab, dipakai seperti tab (sub:AddSection). tab yang punya sub tab hanya menampilkan sub tab-nya
---   sec:AddToggle / AddSlider / AddButton / AddInput / AddDropdown / AddKeybind / AddColorPicker / AddLabel / AddDivider
---   opsi umum: Title, Description, Flag (dipakai config), Default, Callback
---   semua elemen: :Set() :Get() :SetTitle() :SetDescription() :SetVisible() :SetEnabled() :Destroy()
---   dropdown: :Refresh(daftar) :Close()      slider: Min Max Increment Suffix
---   Win:Show() Hide() Toggle() Minimize()    Win:SelectTab(nama|nomor)    Win:SetTitle() SetSubtitle()
---   Win:Confirm(judul, isi, bilaYa)          Win:Dialog({Title, Content, Buttons})
---   Win:AutoLoad()   panggil di AKHIR script: memuat config yang dipilih di Pengaturan (Muat & simpan otomatis)
---   Win:GetSettings()  halaman pengaturan bawaan (bisa ditambah section sendiri)
---   Senja:Notify({Title, Content, Type = "info|success|warn|error", Duration, Callback})
---   Senja:ClearNotifications()   Senja:SetTheme(nama)   Senja:SetAccent(Color3)   Senja:Destroy()
 local Senja = (function()
--- ikon digambar sendiri jadi PNG -> writefile -> getcustomasset (tanpa internet)
 
 local Senja = {Version = "2.10.0", Flags = {}, Windows = {}, Folder = "Senja", Speed = 1}
 
--- jalankan ulang script = UI lama dihapus dulu, supaya tidak muncul dua window / dua tombol bulat
 do
 	local genv = (getgenv and getgenv()) or _G
 	local old = genv.__SenjaLib
@@ -39,33 +20,30 @@ local CoreGui      = cr(game:GetService("CoreGui"))
 local LP = Players.LocalPlayer
 
 local E = Enum
--- Bk sengaja dibuat Quint (tanpa efek memantul) supaya gerakan cepat dan bersih
 local Q, Qn, Lin, Sine, Bk = E.EasingStyle.Quart, E.EasingStyle.Quint, E.EasingStyle.Linear, E.EasingStyle.Sine, E.EasingStyle.Quint
 local OUT, IN = E.EasingDirection.Out, E.EasingDirection.In
 local AY, AX = E.AutomaticSize.Y, E.AutomaticSize.X
 local C3 = Color3.fromRGB
 local WHITE, BLACK = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
 
------------------------------------------------------------- tema (semuanya berlatar hitam, beda di warna aksen)
 local function mk(acc, on)
 	return {Bg = C3(0, 0, 0), Side = C3(13, 13, 13), Surface = C3(17, 17, 17), Hover = C3(28, 28, 28), Track = C3(48, 48, 48),
 		Stroke = C3(30, 30, 30), Text = C3(242, 242, 242), Sub = C3(128, 128, 128), Accent = acc, OnAccent = on or C3(0, 0, 0)}
 end
 local Themes = {
-	Hitam  = mk(C3(240, 240, 240)),
-	Jingga = mk(C3(255, 138, 61)),
-	Biru   = mk(C3(76, 148, 255)),
-	Hijau  = mk(C3(72, 214, 128)),
-	Ungu   = mk(C3(164, 124, 255)),
-	Merah  = mk(C3(255, 84, 92), C3(20, 0, 2)),
-	Mawar  = mk(C3(255, 104, 164)),
+	Black  = mk(C3(240, 240, 240)),
+	Orange = mk(C3(255, 138, 61)),
+	Blue   = mk(C3(76, 148, 255)),
+	Green  = mk(C3(72, 214, 128)),
+	Purple = mk(C3(164, 124, 255)),
+	Red    = mk(C3(255, 84, 92), C3(20, 0, 2)),
+	Pink   = mk(C3(255, 104, 164)),
 	Aqua   = mk(C3(52, 214, 206)),
 }
-local Order = {"Hitam", "Jingga", "Biru", "Hijau", "Ungu", "Merah", "Mawar", "Aqua"}
-local CurName, Cur = "Hitam", Themes.Hitam
+local Order = {"Black", "Orange", "Blue", "Green", "Purple", "Red", "Pink", "Aqua"}
+local CurName, Cur = "Black", Themes.Black
 local Reg, Hooks = {}, {}
 
--- semua animasi lewat sini. BASE memperpendek semua durasi; Senja.Speed < 1 = lebih cepat lagi
 local BASE = .7
 local function tw(o, p, t, s, d)
 	local tr = TweenService:Create(o, TweenInfo.new((t or .16) * BASE * Senja.Speed, s or Q, d or OUT), p)
@@ -112,7 +90,6 @@ function Senja:SetAccent(c)
 end
 function Senja:GetAccentOverride() return AccentOverride end
 
------------------------------------------------------------- helper instance
 local function new(class, props, kids)
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
@@ -146,7 +123,6 @@ local function mount(g)
 	local ok = pcall(function() g.Parent = (gethui and gethui()) or CoreGui end)
 	if not ok or not g.Parent then g.Parent = LP:WaitForChild("PlayerGui") end
 end
--- posisi pointer dalam koordinat layar penuh (cocok dengan AbsolutePosition saat IgnoreGuiInset = true)
 local function ptr(p)
 	return Vector2.new(p.X, p.Y + GuiService:GetGuiInset().Y)
 end
@@ -159,8 +135,6 @@ local function isMove(i)
 	local t = i.UserInputType
 	return t == E.UserInputType.MouseMovement or t == E.UserInputType.Touch
 end
--- listener gerak hanya hidup selama jari/kursor menahan sesuatu. di luar itu tidak ada callback
--- yang jalan tiap frame, jadi tidak ada beban saat UI diam.
 local function ptrDrag(move, finish)
 	local cm, ce
 	cm = UIS.InputChanged:Connect(function(i) if isMove(i) then move(i) end end)
@@ -171,7 +145,6 @@ local function ptrDrag(move, finish)
 	end)
 end
 
------------------------------------------------------------- PNG encoder (stored deflate)
 local crcT = {}
 for i = 0, 255 do
 	local c = i
@@ -212,7 +185,6 @@ local function png(w, h, px)
 	return "\137PNG\r\n\26\n" .. chunk("IHDR", be32(w) .. be32(h) .. "\8\6\0\0\0") .. chunk("IDAT", table.concat(z)) .. chunk("IEND", "")
 end
 
------------------------------------------------------------- gambar ikon (SDF)
 local function L(x1, y1, x2, y2) return {{1, x1, y1, x2, y2}} end
 local function ring(x, y, r) return {{2, x, y, r}} end
 local function disc(x, y, r) return {{3, x, y, r}} end
@@ -352,7 +324,6 @@ local function img(p, name, sz, key)
 	return i
 end
 
------------------------------------------------------------- drag generik (slider, color picker)
 local function dragger(win, frame, fn, onStart, onEnd)
 	local busy = false
 	frame.InputBegan:Connect(function(i)
@@ -367,11 +338,6 @@ local function dragger(win, frame, fn, onStart, onEnd)
 	end)
 end
 
------------------------------------------------------------- notifikasi
--- notifikasi: kartu bulat dengan ikon besar di kiri (kotak tipis bernuansa warna jenisnya) lalu judul dan isi di kanan.
--- tanpa garis warna dan tanpa progress bar. pesan yang sama berturut-turut digabung dengan penghitung kecil.
--- ketuk = tutup, seret ke kanan = singkirkan. waktu berhenti saat disorot atau diseret. maksimal 5.
--- satu loop Heartbeat dipakai bersama semua notifikasi dan mati sendiri kalau tidak ada yang aktif.
 local notifHolder, notifN, notifActive, notifConn = nil, 0, {}, nil
 local KindCol = {success = C3(98, 200, 130), warn = C3(236, 184, 80), error = C3(236, 98, 104)}
 local KindIcon = {success = "check", warn = "warn", error = "x", info = "info"}
@@ -413,11 +379,10 @@ function Senja:Notify(o)
 		local hold = getNotif()
 		local kind = o.Type or "info"
 		local title, body = o.Title, o.Content
-		if not title then title, body = body or "Pemberitahuan", nil end
+		if not title then title, body = body or "Notification", nil end
 		local dur = o.Duration or 4
 		local key = kind .. "|" .. tostring(title) .. "|" .. tostring(body)
 
-		-- pesan yang sama: tambah hitungan, ulang waktu, geser sedikit
 		for _, e in ipairs(notifActive) do
 			if e.key == key and not e.closed then
 				e.count += 1
@@ -443,7 +408,6 @@ function Senja:Notify(o)
 
 		local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = card})
 
-		-- ikon besar
 		local badge = new("Frame", {BackgroundColor3 = col, BackgroundTransparency = .86, Size = UDim2.fromOffset(40, 40), Parent = row})
 		corner(badge, 12)
 		local bs = new("UIScale", {Scale = .7, Parent = badge})
@@ -456,7 +420,6 @@ function Senja:Notify(o)
 				FontFace = font(E.FontWeight.Bold), TextColor3 = col, Parent = badge})
 		end
 
-		-- teks (tinggi minimal 40 = tinggi ikon, isinya di tengah kalau cuma satu baris)
 		local inner = new("Frame", {BackgroundTransparency = 1, Position = UDim2.fromOffset(52, 0), Size = UDim2.new(1, -78, 0, 40), AutomaticSize = AY, Parent = row})
 		new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = E.SortOrder.LayoutOrder, VerticalAlignment = E.VerticalAlignment.Center, Parent = inner})
 		tlabel(inner, title, 13, Cur.Text, E.FontWeight.SemiBold, 1)
@@ -473,7 +436,6 @@ function Senja:Notify(o)
 			e.closed = true
 			local i = table.find(notifActive, e)
 			if i then table.remove(notifActive, i) end
-			-- tunggu kartu benar-benar keluar layar baru ruangnya dirapatkan, supaya tidak menimpa kartu di bawahnya
 			tw(card, {Position = UDim2.fromOffset(OFF, 0)}, .18).Completed:Wait()
 			if not wrap.Parent then return end
 			wrap.AutomaticSize = E.AutomaticSize.None
@@ -532,21 +494,16 @@ function Senja:ClearNotifications()
 	end
 end
 
------------------------------------------------------------- container elemen
--- setiap elemen berupa kartu bulat sendiri (tanpa garis tepi), jarak antar kartu kecil.
--- section hanya judul kecil yang bisa dilipat; kartu di dalamnya ikut terlipat.
 local Box = {}
 Box.__index = Box
 local function newBox(win, tab, body) return setmetatable({Win = win, Tab = tab, Body = body, _cnt = 0}, Box) end
 function Box:_n() self._cnt += 1 return self._cnt end
--- matikan scroll halaman selama slider / color picker digeser (kalau tidak, halaman ikut tergulir di layar sentuh)
 function Box:_lock(on)
 	local s = self.Tab and self.Tab.Scroll
 	if s then s.ScrollingEnabled = not on end
 end
 local lastRow
 local openDD
--- metode umum untuk semua elemen: SetTitle, SetDescription, SetVisible, SetEnabled, Destroy
 local function deco(obj, c)
 	if not c then return obj end
 	local win, item = c.owner.Win, c.item
@@ -729,7 +686,6 @@ function Box:AddSlider(o)
 		tw(bl, {TextTransparency = on and 0 or 1}, .1)
 		tw(knob, {Size = UDim2.fromOffset(on and 20 or 14, on and 20 or 14)}, .14)
 	end
-	-- instant = true dipakai saat digeser: langsung ikut jari tanpa tween, dan tidak jalan kalau nilainya sama
 	function obj:Set(v, silent, instant)
 		v = math.clamp(math.floor(((tonumber(v) or mn) - mn) / inc + .5) * inc + mn, mn, mx)
 		v = math.floor(v * 10000 + .5) / 10000
@@ -764,7 +720,7 @@ function Box:AddInput(o)
 	bind(f, "BackgroundColor3", "Bg") corner(f, 14)
 	local st = stroke(f, "Stroke", 1, 0)
 	local tb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = obj.Value,
-		PlaceholderText = o.Placeholder or "ketik di sini", ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = f})
+		PlaceholderText = o.Placeholder or "type here", ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = f})
 	bind(tb, "TextColor3", "Text") bind(tb, "PlaceholderColor3", "Sub")
 	tb.Focused:Connect(function() tw(st, {Color = Cur.Accent}, .1) end)
 	tb.FocusLost:Connect(function(enter)
@@ -797,7 +753,7 @@ function Box:AddDropdown(o)
 	if o.Search then
 		local sf = new("Frame", {Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 1, Parent = body})
 		bind(sf, "BackgroundColor3", "Bg") corner(sf, 14)
-		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = "", PlaceholderText = "cari...",
+		sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), Text = "", PlaceholderText = "search...",
 			ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Parent = sf})
 		bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
 	end
@@ -813,7 +769,7 @@ function Box:AddDropdown(o)
 			tw(b.lbl, {TextColor3 = s and Cur.Accent or Cur.Text}, .08)
 			tw(b.chk, {ImageTransparency = s and 0 or 1}, .08)
 		end
-		local ph = o.Placeholder or "pilih..."
+		local ph = o.Placeholder or "select..."
 		if multi then dl.Text = #obj.Value > 0 and table.concat(obj.Value, ", ") or ph else dl.Text = obj.Value or ph end
 	end
 	local function build()
@@ -1013,10 +969,9 @@ function Box:AddColorPicker(o)
 	return reg(o, obj)
 end
 
--- pemilih tema berupa deretan lingkaran warna
 function Box:AddThemePicker(o)
 	o = o or {}
-	local c = self:_row({Title = o.Title or "Tema", Description = CurName}, 0)
+	local c = self:_row({Title = o.Title or "Theme", Description = CurName}, 0)
 	local grid = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, LayoutOrder = 2, Parent = c.col})
 	pad(grid, 0, 12, 0, 0)
 	new("UIGridLayout", {CellSize = UDim2.fromOffset(32, 32), CellPadding = UDim2.fromOffset(10, 10), SortOrder = E.SortOrder.LayoutOrder, Parent = grid})
@@ -1035,7 +990,7 @@ function Box:AddThemePicker(o)
 		chips[name] = {ring = ring, us = us}
 	end
 	local function paint()
-		if c.desc then c.desc.Text = CurName .. (AccentOverride and " (aksen kustom)" or "") end
+		if c.desc then c.desc.Text = CurName .. (AccentOverride and " (custom accent)" or "") end
 		for name, ch in pairs(chips) do
 			tw(ch.ring, {Transparency = (name == CurName and not AccentOverride) and 0 or 1, Color = Cur.Text}, .12)
 		end
@@ -1062,9 +1017,6 @@ function Box:AddSection(o)
 	local open = o.Open ~= false
 	ar.Rotation = open and 0 or -90
 
-	-- faktor skala UI yang sedang berlaku (UIScale di window). AbsoluteSize / AbsoluteContentSize sudah terkena skala,
-	-- sedangkan Size offset belum, jadi tinggi dari Absolute* harus dibagi faktor ini sebelum dipakai sebagai offset.
-	-- (dulu tinggi section dipasang mentah dari AbsoluteContentSize, makanya isi section terpotong di skala UI selain 100%)
 	local win = self.Win
 	local function k()
 		local r = win.Root
@@ -1072,13 +1024,10 @@ function Box:AddSection(o)
 		return (w > 0 and a > 0) and a / w or 1
 	end
 	local secTw
-	-- section terbuka dan diam: tinggi dibiarkan mengikuti isi (AutomaticSize), jadi tidak pernah terpotong
-	-- dan tidak ada jeda saat isi berubah (dropdown dibuka, teks berganti, dll)
 	local function settle()
 		if open then
 			content.AutomaticSize = AY
 			content.Size = UDim2.new(1, 0, 0, 0)
-			-- saat terbuka dan diam tidak perlu memotong isi, jadi tidak ada area klik yang ikut terpotong
 			content.ClipsDescendants = false
 		end
 	end
@@ -1087,7 +1036,6 @@ function Box:AddSection(o)
 	local sub = newBox(self.Win, self.Tab, group)
 	sub.IsOpen, sub.Frame = open, sec
 	table.insert(self.Tab.Secs, sub)
-	-- dipanggil saat tab ditampilkan: pastikan section terbuka kembali mengikuti isinya
 	sub.Refresh = function()
 		if open and not (secTw and secTw.PlaybackState == E.PlaybackState.Playing) then settle() end
 	end
@@ -1095,7 +1043,6 @@ function Box:AddSection(o)
 		open = v and true or false
 		self.IsOpen = open
 		if secTw then secTw:Cancel() end
-		-- tinggi sekarang dan tinggi tujuan, dalam satuan offset
 		local s = k()
 		local from = content.AbsoluteSize.Y / s
 		local to = open and math.max(group.AbsoluteSize.Y, cl.AbsoluteContentSize.Y) / s or 0
@@ -1104,7 +1051,6 @@ function Box:AddSection(o)
 		content.Size = UDim2.new(1, 0, 0, from)
 		local mine = tw(content, {Size = UDim2.new(1, 0, 0, to)}, .2)
 		secTw = mine
-		-- setelah selesai, kembalikan ke AutomaticSize (isi bisa berubah selama animasi, mis. dropdown dibuka)
 		mine.Completed:Connect(function(st)
 			if mine == secTw and open and st == E.PlaybackState.Completed then settle() end
 		end)
@@ -1116,7 +1062,6 @@ function Box:AddSection(o)
 	return sub
 end
 
--- pengaturan UI (tema, aksen, ukuran, kecepatan, dll) tersimpan otomatis ke Senja/ui.json dan dimuat lagi saat UI dijalankan
 local Prefs = {}
 local prefTok = 0
 local function prefPath() return Senja.Folder .. "/ui.json" end
@@ -1149,11 +1094,9 @@ local function pref(k, v)
 	end)
 end
 
------------------------------------------------------------- window
 local Window = {}
 Window.__index = Window
 
--- rail tab di kiri: lebar rail, tinggi satu tombol tab, jarak antar tombol
 local RAIL, TABH, TABP, SUBH = 72, 50, 4, 32
 
 function Window:_c(sig, fn)
@@ -1162,7 +1105,6 @@ function Window:_c(sig, fn)
 	return c
 end
 
--- posisi Y (piksel) saat terbuka dan saat tersembunyi di atas layar
 function Window:_px()
 	local hy = self.Home.Y.Scale * workspace.CurrentCamera.ViewportSize.Y + self.Home.Y.Offset
 	local cy = -(self.Root.Size.Y.Offset * self.UserScale) / 2 - 24
@@ -1175,13 +1117,11 @@ function Window:_stop()
 	for _, t in ipairs(self._tws) do t:Cancel() end
 	self._tws = {}
 end
--- p: 0 = tertutup, 1 = terbuka penuh. dipakai saat window ditarik ke atas untuk menutup
 function Window:_progress(p)
 	local hy, cy = self:_px()
 	self:_at(cy + (hy - cy) * p)
 	self.Dim.BackgroundTransparency = 1 - (1 - self:_dimT()) * p
 end
--- hanya posisi dan redup latar yang dianimasikan (tanpa skala / pudar), jadi isi window tidak digambar ulang tiap frame
 function Window:_go(open)
 	self:_stop()
 	local _, cy = self:_px()
@@ -1192,7 +1132,6 @@ function Window:_go(open)
 	}
 end
 
--- tombol melayang ikut berubah mengikuti status buka/tutup
 function Window:_fab()
 	if not self.Fab then return end
 	local op = self.Open
@@ -1200,7 +1139,6 @@ function Window:_fab()
 	tw(self.FabStroke, {Color = op and Cur.Accent or Cur.Stroke}, .14)
 	tw(self.Fab, {BackgroundTransparency = op and .3 or 0}, .14)
 end
--- saat UI tertutup tombol selalu tampil, supaya UI tidak bisa "hilang" tanpa jalan kembali
 function Window:_fabVis()
 	if self.Fab then self.Fab.Visible = self.FabWanted or not self.Open end
 end
@@ -1209,7 +1147,6 @@ function Window:SetFab(on)
 	self:_fabVis()
 end
 
--- garis bawah window saat ditarik ke atas
 function Window:_grabFx(over)
 	local g = self.GrabFx.pill
 	tw(g, {BackgroundColor3 = over and Cur.Accent or Cur.Sub, BackgroundTransparency = over and 0 or .55, Size = UDim2.fromOffset(over and 64 or 34, 3)}, .1)
@@ -1242,7 +1179,6 @@ function Window:SetScale(n)
 	self:_fit()
 end
 
--- saat diminimalkan latar tidak diredupkan, supaya game tetap terlihat
 function Window:_dimT() return self.Minimized and 1 or self.DimT end
 
 function Window:SetDim(on)
@@ -1250,9 +1186,6 @@ function Window:SetDim(on)
 	if self.Open then tw(self.Dim, {BackgroundTransparency = self:_dimT()}, .15) end
 end
 
--- minimize: window mengecil jadi header saja. klik lagi untuk memulihkan.
--- bilah tab, halaman (tombol, slider, dll), footer, dan garis tarik disembunyikan LANGSUNG saat minimize,
--- bukan menunggu animasi mengecil selesai. kalau menunggu, isinya terlihat tersapu sebentar sebelum hilang.
 function Window:SetMinimized(v)
 	v = v and true or false
 	if self.Minimized == v then return end
@@ -1287,7 +1220,6 @@ function Window:Destroy()
 	task.delay(.3, function() self.Gui:Destroy() end)
 end
 
--- ukuran window mengikuti ukuran layar dan skala UI (supaya tidak melebihi layar saat diputar atau skala 130%)
 function Window:_fit()
 	local v = workspace.CurrentCamera.ViewportSize
 	local k = self.UserScale
@@ -1299,7 +1231,6 @@ function Window:_fit()
 	end
 end
 
--- jaga supaya header tidak pernah keluar layar (kalau keluar, window tidak bisa dijangkau lagi)
 function Window:_clamp()
 	local v = workspace.CurrentCamera.ViewportSize
 	local k = self.UserScale
@@ -1326,7 +1257,6 @@ function Window:IsOpen() return self.Open end
 function Window:SetTitle(t) self.TitleLabel.Text = tostring(t) end
 function Window:SetSubtitle(t) self.SubLabel.Text = tostring(t) end
 
--- pilih tab dari objek tab, nomor urut, atau judulnya
 function Window:SelectTab(x)
 	local tab = x
 	if type(x) == "number" then
@@ -1342,10 +1272,9 @@ function Window:SelectTab(x)
 end
 
 function Window:Confirm(title, content, onYes, onNo)
-	self:Dialog({Title = title, Content = content, Buttons = {{Title = "Batal", Callback = onNo}, {Title = "Ya", Primary = true, Callback = onYes}}})
+	self:Dialog({Title = title, Content = content, Buttons = {{Title = "Cancel", Callback = onNo}, {Title = "Yes", Primary = true, Callback = onYes}}})
 end
 
--- pindah tab: halaman lama langsung disembunyikan, halaman baru menggeser masuk dari arah yang sama dengan indikator
 function Window:Select(tab)
 	if self.Current == tab then return end
 	if openDD then openDD:Close() end
@@ -1368,8 +1297,6 @@ function Window:Select(tab)
 	task.defer(function() for _, s in ipairs(pg.Secs) do s.Refresh() end end)
 end
 
--- saring baris berdasarkan kata kunci. section tanpa hasil disembunyikan,
--- section tertutup yang punya hasil dibuka otomatis.
 function Window:_filter(q)
 	q = q:lower()
 	local tab = self:_page(self.Current)
@@ -1387,8 +1314,6 @@ function Window:_filter(q)
 	end
 end
 
--- tombol tab disusun menurun di rail kiri; indikator bergeser naik-turun di antaranya.
--- kalau tab banyak, rail bisa digulir.
 function Window:_layoutTabs()
 	local n = #self.Tabs
 	for i, t in ipairs(self.Tabs) do
@@ -1403,7 +1328,6 @@ end
 function Window:_moveInd(anim)
 	local t = self.Current
 	if not t then return end
-	-- halaman pengaturan tidak ada di bilah tab, jadi indikator disembunyikan
 	if t.IsSettings then
 		tw(self.Ind, {BackgroundTransparency = 1}, .12)
 		return
@@ -1415,14 +1339,11 @@ function Window:_moveInd(anim)
 	tw(self.Ind, {BackgroundTransparency = 0}, .12)
 end
 
--- halaman berupa Frame biasa (bukan CanvasGroup) supaya tidak ada render ke tekstur tiap frame
 function Window:_newPage(parent)
 	local grp = new("Frame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = parent or self.Pages})
 	local sc = new("ScrollingFrame", {BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), AutomaticCanvasSize = AY,
 		CanvasSize = UDim2.new(), ScrollBarThickness = 3, ScrollBarImageTransparency = .4, Parent = grp})
 	bind(sc, "ScrollBarImageColor3", "Track")
-	-- UIPadding langsung di ScrollingFrame ikut memotong area gulir (bagian bawah dan atas jadi terpotong),
-	-- jadi layout + padding dipindah ke frame isi di dalamnya
 	local body = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = AY, Parent = sc})
 	new("UIListLayout", {Padding = UDim.new(0, 12), SortOrder = E.SortOrder.LayoutOrder, Parent = body})
 	pad(body, 14, 8, 14, 20)
@@ -1431,13 +1352,10 @@ function Window:_newPage(parent)
 	return tab
 end
 
--- halaman aktif sebuah tab: kalau tab punya sub tab, halamannya adalah sub tab yang sedang dipilih
 function Window:_page(t)
 	return t and (t.Sub or t)
 end
 
--- sub tab: bar kecil di atas halaman tab. tiap sub tab punya halaman dan scroll sendiri di bawah bar.
--- semua tombol sub tab berbagi lebar sama; indikator bergeser di antaranya.
 function Window:_layoutSubs(tab)
 	local n = #tab.Subs
 	for i, s in ipairs(tab.Subs) do
@@ -1480,7 +1398,6 @@ function Window:_addSub(tab, o)
 	if type(o) == "string" then o = {Title = o} end
 	local win = self
 	if not tab.SubBar then
-		-- sub tab pertama: siapkan bar di atas dan wadah halaman di bawahnya, halaman utama tab disembunyikan
 		tab.Scroll.Visible = false
 		tab.Subs = {}
 		local bar = new("Frame", {Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -28, 0, SUBH), Parent = tab.Group})
@@ -1509,9 +1426,8 @@ function Window:_addSub(tab, o)
 	if #tab.Subs == 1 then self:_selectSub(tab, sub) end
 	return sub
 end
--- hanya bisa dipanggil dari tab (hasil Win:AddTab), bukan dari section atau sub tab
 function Box:AddSubTab(o)
-	assert(self.Tab == self and not self.Owner, "[Senja] AddSubTab hanya bisa dipanggil dari tab, bukan dari section atau sub tab")
+	assert(self.Tab == self and not self.Owner, "[Senja] AddSubTab can only be called from a tab, not from a section or sub tab")
 	return self.Win:_addSub(self, o)
 end
 
@@ -1519,7 +1435,6 @@ function Window:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
 	local win = self
 	local btn = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, ZIndex = 2, Parent = self.Nav})
-	-- ikon di atas, label kecil di bawahnya (rata tengah)
 	local cont = new("Frame", {BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
 		Size = UDim2.fromScale(1, 1), Parent = btn})
 	new("UIListLayout", {FillDirection = E.FillDirection.Vertical, VerticalAlignment = E.VerticalAlignment.Center,
@@ -1553,7 +1468,6 @@ function Window:AddTab(o)
 end
 
 function Window:Dialog(o)
-	-- dialog harus terlihat: pulihkan dari minimize / buka window dulu
 	if self.Minimized then
 		self:SetMinimized(false)
 		task.delay(.22, function() self:Dialog(o) end)
@@ -1568,7 +1482,7 @@ function Window:Dialog(o)
 	local us = new("UIScale", {Scale = .94, Parent = card})
 	tw(us, {Scale = 1}, .2, Qn)
 	new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = E.SortOrder.LayoutOrder, Parent = card})
-	label(card, o.Title or "Konfirmasi", 16, "Text", E.FontWeight.Bold).LayoutOrder = 1
+	label(card, o.Title or "Confirm", 16, "Text", E.FontWeight.Bold).LayoutOrder = 1
 	local ct = label(card, o.Content or "", 12, "Sub")
 	ct.TextWrapped, ct.AutomaticSize, ct.Size, ct.LayoutOrder = true, AY, UDim2.new(1, 0, 0, 0), 2
 	local row = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 38), LayoutOrder = 3, Parent = card})
@@ -1618,8 +1532,6 @@ function Window:SaveConfig(name)
 	return ok
 end
 
--- config yang dipilih di Pengaturan ("Muat & simpan otomatis") dimuat lewat fungsi ini. panggil SETELAH semua elemen dibuat.
--- sesudahnya perubahan disimpan sendiri tiap 15 detik (hanya kalau ada yang berubah).
 function Window:AutoLoad()
 	local n = Prefs.autoload
 	local loaded = false
@@ -1667,37 +1579,37 @@ end
 function Window:_buildSettings(tab)
 	local win = self
 	local function P(k, v) if win.Live then pref(k, v) end end
-	local tampil = tab:AddSection("Tampilan")
-	tampil:AddThemePicker({Title = "Tema"})
+	local display = tab:AddSection("Appearance")
+	display:AddThemePicker({Title = "Theme"})
 	local setting = false
 	local accent
-	accent = tampil:AddColorPicker({Title = "Warna aksen", Description = "timpa warna aksen tema yang aktif", Default = Cur.Accent, Callback = function(c)
+	accent = display:AddColorPicker({Title = "Accent color", Description = "overrides the accent color of the active theme", Default = Cur.Accent, Callback = function(c)
 		setting = true
 		Senja:SetAccent(c)
 		setting = false
 	end})
 	Senja:OnTheme(function() if not setting then accent:Set(Cur.Accent, true) end end)
-	tampil:AddSlider({Title = "Ukuran UI", Min = 70, Max = 130, Default = Prefs.scale or 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) P("scale", v) end})
-	tampil:AddSlider({Title = "Kecepatan animasi", Description = "makin tinggi makin cepat", Min = 50, Max = 200, Increment = 10, Default = Prefs.speed or 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v P("speed", v) end})
-	tampil:AddToggle({Title = "Redupkan latar", Description = "layar menggelap saat UI terbuka", Default = Prefs.dim ~= false, Callback = function(v) win:SetDim(v) P("dim", v) end})
-	tampil:AddToggle({Title = "Tombol melayang", Description = "tombol bulat untuk buka/tutup UI, bisa digeser. saat UI tertutup tombol tetap tampil", Default = Prefs.fab ~= false, Callback = function(v) win:SetFab(v) P("fab", v) end})
-	tampil:AddKeybind({Title = "Tombol buka/tutup", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k P("key", k.Name) end end})
-	tampil:AddLabel({Title = "Cara buka/tutup", Description = "ketuk tombol bulat atau tekan tombol keyboard. tombol minus di header mengecilkan window jadi header saja. tarik ke atas dari garis di bawah window untuk menutup."})
-	local cfg = tab:AddSection("Konfigurasi")
-	local nameIn = cfg:AddInput({Title = "Nama config", Placeholder = "default", Default = "default"})
+	display:AddSlider({Title = "UI size", Min = 70, Max = 130, Default = Prefs.scale or 100, Suffix = "%", Callback = function(v) win:SetScale(v / 100) P("scale", v) end})
+	display:AddSlider({Title = "Animation speed", Description = "higher is faster", Min = 50, Max = 200, Increment = 10, Default = Prefs.speed or 100, Suffix = "%", Callback = function(v) Senja.Speed = 100 / v P("speed", v) end})
+	display:AddToggle({Title = "Dim background", Description = "the screen darkens while the UI is open", Default = Prefs.dim ~= false, Callback = function(v) win:SetDim(v) P("dim", v) end})
+	display:AddToggle({Title = "Floating button", Description = "round button to open/close the UI, can be dragged. while the UI is closed the button stays visible", Default = Prefs.fab ~= false, Callback = function(v) win:SetFab(v) P("fab", v) end})
+	display:AddKeybind({Title = "Toggle key", Default = self.ToggleKey, Changed = function(k) if k ~= E.KeyCode.Unknown then win.ToggleKey = k P("key", k.Name) end end})
+	display:AddLabel({Title = "How to open/close", Description = "tap the round button or press the keyboard key. the minus button in the header shrinks the window to just the header. drag up from the line at the bottom of the window to close it."})
+	local cfg = tab:AddSection("Configuration")
+	local nameIn = cfg:AddInput({Title = "Config name", Placeholder = "default", Default = "default"})
 	local dd
-	dd = cfg:AddDropdown({Title = "Config tersimpan", Values = self:ListConfigs()})
-	cfg:AddButton({Title = "Simpan", Description = "tulis semua pengaturan ke file", Icon = "save", Callback = function()
+	dd = cfg:AddDropdown({Title = "Saved configs", Values = self:ListConfigs()})
+	cfg:AddButton({Title = "Save", Description = "write all settings to a file", Icon = "save", Callback = function()
 		local ok = win:SaveConfig(nameIn:Get() ~= "" and nameIn:Get() or "default")
 		dd:Refresh(win:ListConfigs())
-		Senja:Notify({Title = ok and "Config tersimpan" or "Gagal menyimpan", Content = ok and nil or "executor ini tidak punya writefile", Type = ok and "success" or "error"})
+		Senja:Notify({Title = ok and "Config saved" or "Failed to save", Content = ok and nil or "this executor has no writefile", Type = ok and "success" or "error"})
 	end})
-	cfg:AddButton({Title = "Muat", Description = "pakai config yang dipilih di atas", Icon = "folder", Callback = function()
+	cfg:AddButton({Title = "Load", Description = "use the config selected above", Icon = "folder", Callback = function()
 		local n = dd:Get() or nameIn:Get()
 		local ok = win:LoadConfig(n)
-		Senja:Notify({Title = ok and ("Config dimuat: " .. tostring(n)) or "Config tidak ditemukan", Content = ok and nil or tostring(n), Type = ok and "success" or "warn"})
+		Senja:Notify({Title = ok and ("Config loaded: " .. tostring(n)) or "Config not found", Content = ok and nil or tostring(n), Type = ok and "success" or "warn"})
 	end})
-	cfg:AddToggle({Title = "Muat & simpan otomatis", Description = "config di atas dimuat saat script dijalankan dan disimpan tiap ada perubahan. butuh Win:AutoLoad() di akhir script.",
+	cfg:AddToggle({Title = "Auto load & save", Description = "the config above is loaded when the script runs and saved whenever something changes. requires Win:AutoLoad() at the end of the script.",
 		Default = Prefs.autoload ~= nil, Callback = function(v)
 			if not win.Live then return end
 			if v then
@@ -1707,14 +1619,14 @@ function Window:_buildSettings(tab)
 				win.AutoReady = true
 				win:SaveConfig(n)
 				dd:Refresh(win:ListConfigs())
-				Senja:Notify({Title = "Simpan otomatis aktif", Content = n, Type = "success"})
+				Senja:Notify({Title = "Auto save enabled", Content = n, Type = "success"})
 			else
 				pref("autoload", nil)
 			end
 		end})
-	local lain = tab:AddSection("Lain-lain")
+	local misc = tab:AddSection("Misc")
 	local afk
-	lain:AddToggle({Title = "Anti AFK", Description = "cegah kick karena idle 20 menit", Callback = function(v)
+	misc:AddToggle({Title = "Anti AFK", Description = "prevent the kick from 20 minutes of idling", Callback = function(v)
 		if v then
 			afk = LP.Idled:Connect(function()
 				local vu = game:GetService("VirtualUser")
@@ -1722,33 +1634,32 @@ function Window:_buildSettings(tab)
 			end)
 		elseif afk then afk:Disconnect() afk = nil end
 	end})
-	lain:AddButton({Title = "Rejoin server", Description = "keluar dan masuk ulang ke server ini", Icon = "play", Callback = function()
-		win:Confirm("Rejoin server?", "Kamu akan keluar lalu masuk ulang ke server ini.", function()
+	misc:AddButton({Title = "Rejoin server", Description = "leave and rejoin this server", Icon = "play", Callback = function()
+		win:Confirm("Rejoin server?", "You will leave and rejoin this server.", function()
 			local ts = game:GetService("TeleportService")
 			pcall(function()
 				if #game.JobId > 0 then ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP) else ts:Teleport(game.PlaceId, LP) end
 			end)
 		end)
 	end})
-	lain:AddButton({Title = "Salin ID server", Description = "salin JobId ke clipboard", Icon = "save", Callback = function()
+	misc:AddButton({Title = "Copy server ID", Description = "copy the JobId to the clipboard", Icon = "save", Callback = function()
 		if setclipboard then
 			setclipboard(game.JobId)
-			Senja:Notify({Title = "ID server disalin", Type = "success"})
+			Senja:Notify({Title = "Server ID copied", Type = "success"})
 		else
-			Senja:Notify({Title = "Executor tidak punya setclipboard", Type = "error"})
+			Senja:Notify({Title = "Executor has no setclipboard", Type = "error"})
 		end
 	end})
-	lain:AddButton({Title = "Reset posisi window", Description = "kembalikan ke tengah layar", Icon = "target", Callback = function() win:ResetPos() end})
-	lain:AddButton({Title = "Tutup UI", Description = "hapus window ini sepenuhnya", Icon = "x", Callback = function() win:_confirmClose() end})
+	misc:AddButton({Title = "Reset window position", Description = "return to the center of the screen", Icon = "target", Callback = function() win:ResetPos() end})
+	misc:AddButton({Title = "Close UI", Description = "remove this window entirely", Icon = "x", Callback = function() win:_confirmClose() end})
 	return tab
 end
 
 function Window:_confirmClose()
 	local function ask()
-		self:Dialog({Title = "Tutup UI?", Content = "Window akan dihapus. Pengaturan UI tetap tersimpan, config fitur yang belum disimpan hilang.",
-			Buttons = {{Title = "Batal"}, {Title = "Tutup", Primary = true, Callback = function() self:Destroy() end}}})
+		self:Dialog({Title = "Close UI?", Content = "The window will be removed. UI settings stay saved; feature configs that have not been saved are lost.",
+			Buttons = {{Title = "Cancel"}, {Title = "Close", Primary = true, Callback = function() self:Destroy() end}}})
 	end
-	-- dialog tidak terlihat saat window diminimalkan, jadi dipulihkan dulu
 	if self.Minimized then
 		self:SetMinimized(false)
 		task.delay(.2, ask)
@@ -1757,12 +1668,9 @@ function Window:_confirmClose()
 	end
 end
 
--- pengaturan sudah bawaan dan selalu ada (tombol gerigi di header). dua fungsi ini hanya untuk script lama / menambah isi.
 function Window:BuildSettings() return self.Settings end
 function Window:GetSettings() return self.Settings end
 
--- ikon senja "tenggelam lalu terbit": turun sedikit dan mengecil, naik sambil membesar, lalu kembali normal.
--- hanya properti Position dan UIScale yang dianimasikan, jadi ringan.
 local breathing = {}
 local function breathe(ic, us)
 	if breathing[ic] or not ic.Parent then return end
@@ -1785,8 +1693,6 @@ local function breathe(ic, us)
 	end)
 end
 
--- gestur tarik ke atas dari garis di bawah window untuk menutup.
--- window ikut jari/kursor; lepas setelah cukup jauh atau cukup cepat -> tertutup, kalau tidak -> kembali.
 local function swipeClose(win, zone)
 	local on = false
 	local function span() return math.clamp(workspace.CurrentCamera.ViewportSize.Y * .45, 200, 380) end
@@ -1815,7 +1721,6 @@ end
 
 function Senja:CreateWindow(o)
 	o = o or {}
-	-- pengaturan tersimpan dimuat dulu; kalau ada, mengalahkan nilai bawaan dari script
 	local P = loadPrefs()
 	Prefs = P
 	if P.theme and Themes[P.theme] then self:SetTheme(P.theme) elseif o.Theme then self:SetTheme(o.Theme) end
@@ -1829,7 +1734,7 @@ function Senja:CreateWindow(o)
 	end
 	local usc = type(P.scale) == "number" and math.clamp(P.scale, 70, 130) / 100 or 1
 	local win = setmetatable({Tabs = {}, Conns = {}, Open = false, Minimized = false, Live = false, UserScale = usc, ToggleKey = tkey,
-		Home = UDim2.fromScale(.5, .5),   -- selalu muncul di tengah layar saat load (posisi geseran tidak diingat)
+		Home = UDim2.fromScale(.5, .5),
 		_tok = 0, _tws = {}, DimT = P.dim == false and 1 or .62, FabWanted = P.fab ~= false}, Window)
 	local gui = new("ScreenGui", {Name = o.Name or "SenjaUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = E.ZIndexBehavior.Sibling})
 	mount(gui)
@@ -1842,14 +1747,12 @@ function Senja:CreateWindow(o)
 	local scale = new("UIScale", {Scale = win.UserScale, Parent = root})
 	local main = new("Frame", {Size = UDim2.fromScale(1, 1), ClipsDescendants = true, Parent = root})
 	bind(main, "BackgroundColor3", "Bg") stroke(main, "Stroke", 1, 0)
-	-- latar hitam: penuh di kiri, makin transparan ke kanan (hanya warna latar window; kartu di atasnya tetap)
 	local rf = math.clamp(tonumber(o.RightFade) or .3, 0, 1)
 	new("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(.4, 0),
 		NumberSequenceKeypoint.new(1, rf)}), Parent = main})
 	win.MainCorner = corner(main, 20)
 	win.Gui, win.Root, win.Scale, win.Main, win.Dim = gui, root, scale, main, dim
 
-	-- header
 	local top = new("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), Parent = main})
 	local logo = img(top, o.Icon or "logo", 20, "Accent")
 	logo.AnchorPoint, logo.Position = Vector2.new(.5, .5), UDim2.new(0, 28, .5, 0)
@@ -1862,7 +1765,6 @@ function Senja:CreateWindow(o)
 	t2.AutomaticSize, t2.Size = AX, UDim2.fromOffset(0, 14)
 	win.TitleLabel, win.SubLabel = t1, t2
 
-	-- isOn (opsional): kalau mengembalikan true, tombol tetap tampak aktif saat kursor keluar
 	local function wbtn(ic, x, fn, isOn)
 		local b = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, .5),
 			Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(28, 28), Parent = top})
@@ -1883,10 +1785,8 @@ function Senja:CreateWindow(o)
 		return b, i
 	end
 	wbtn("x", -14, function() win:_confirmClose() end)
-	-- minus: kecilkan window jadi header saja (klik lagi untuk memulihkan)
 	local _, mic = wbtn("minus", -46, function() win:SetMinimized(not win.Minimized) end)
 	win.MinIcon = mic
-	-- gerigi: pengaturan tetap. klik untuk membuka, klik lagi untuk kembali ke tab sebelumnya
 	local gbtn, gic = wbtn("gear", -80, function()
 		if win.Current == win.Settings then
 			local back = win.LastTab or win.Tabs[1]
@@ -1897,12 +1797,11 @@ function Senja:CreateWindow(o)
 	end, function() return win.Current == win.Settings end)
 	win.GearBtn, win.GearIc = gbtn, gic
 
-	-- pencarian: ikon kecil yang melebar saat diketuk
 	local sbox = new("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -112, .5, 0), Size = UDim2.fromOffset(28, 28), ClipsDescendants = true, Parent = top})
 	bind(sbox, "BackgroundColor3", "Hover") corner(sbox, 14)
 	local si = img(sbox, "search", 12, "Sub")
 	si.AnchorPoint, si.Position = Vector2.new(0, .5), UDim2.new(0, 8, .5, 0)
-	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(26, 0), Size = UDim2.fromOffset(116, 28), Text = "", PlaceholderText = "cari...",
+	local sb = new("TextBox", {BackgroundTransparency = 1, Position = UDim2.fromOffset(26, 0), Size = UDim2.fromOffset(116, 28), Text = "", PlaceholderText = "search...",
 		ClearTextOnFocus = false, TextSize = 12, FontFace = font(), TextXAlignment = E.TextXAlignment.Left, Visible = false, Parent = sbox})
 	bind(sb, "TextColor3", "Text") bind(sb, "PlaceholderColor3", "Sub")
 	local sbtn = new("TextButton", {Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3, Parent = sbox})
@@ -1922,7 +1821,6 @@ function Senja:CreateWindow(o)
 	sb:GetPropertyChangedSignal("Text"):Connect(function() win:_filter(sb.Text) end)
 	win.SearchBox = sb
 
-	-- navigasi di kiri: rail vertikal, indikator bergeser naik-turun mengikuti tab yang dipilih
 	local FOOT = 46
 	local nav = new("Frame", {Position = UDim2.fromOffset(10, 56), Size = UDim2.new(0, RAIL, 1, -(56 + FOOT + 8)), Parent = main})
 	bind(nav, "BackgroundColor3", "Side") corner(nav, 18)
@@ -1932,7 +1830,6 @@ function Senja:CreateWindow(o)
 	bind(ind, "BackgroundColor3", "Track") corner(ind, 14)
 	win.Nav, win.Ind, win.NavFrame = navIn, ind, nav
 
-	-- halaman (di kanan rail) + footer profil
 	win.Pages = new("Frame", {BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(RAIL + 10, 52), Size = UDim2.new(1, -(RAIL + 10), 1, -(52 + FOOT)), Parent = main})
 	local foot = new("Frame", {BackgroundTransparency = 1, Position = UDim2.new(0, 0, 1, -FOOT), Size = UDim2.new(1, 0, 0, FOOT), Parent = main})
 	win.Foot = foot
@@ -1947,7 +1844,6 @@ function Senja:CreateWindow(o)
 	un.Position, un.Size, un.TextTruncate = UDim2.fromOffset(52, 24), UDim2.fromOffset(150, 12), E.TextTruncate.AtEnd
 	local fps = label(foot, "", 11, "Sub")
 	fps.AnchorPoint, fps.Position, fps.Size, fps.TextXAlignment = Vector2.new(1, .5), UDim2.new(1, -18, .5, 1), UDim2.fromOffset(120, 14), E.TextXAlignment.Right
-	-- penghitung fps hanya jalan saat UI terbuka
 	local acc, frames = 0, 0
 	win:_c(RunService.Heartbeat, function(dt)
 		if not win.Open then return end
@@ -1960,7 +1856,6 @@ function Senja:CreateWindow(o)
 			acc, frames = 0, 0
 		end
 	end)
-	-- kalau rbxthumb tidak termuat, coba lewat GetUserThumbnailAsync
 	task.spawn(function()
 		local t0 = os.clock()
 		while av.Parent and not av.IsLoaded and os.clock() - t0 < 4 do task.wait(.25) end
@@ -1972,7 +1867,6 @@ function Senja:CreateWindow(o)
 		end
 	end)
 
-	-- geser window lewat header
 	top.InputBegan:Connect(function(i)
 		if not isPtr(i) then return end
 		local ds, sp = i.Position, root.Position
@@ -1986,7 +1880,6 @@ function Senja:CreateWindow(o)
 		end)
 	end)
 
-	-- garis di bawah window: tarik ke atas untuk menutup
 	local grab = new("TextButton", {Text = "", AutoButtonColor = false, BackgroundTransparency = 1, AnchorPoint = Vector2.new(.5, 1),
 		Position = UDim2.new(.5, 0, 1, 0), Size = UDim2.fromOffset(220, 26), ZIndex = 20, Parent = main})
 	local gp = new("Frame", {AnchorPoint = Vector2.new(.5, 1), Position = UDim2.new(.5, 0, 1, -7), Size = UDim2.fromOffset(34, 3), Parent = grab})
@@ -1998,7 +1891,6 @@ function Senja:CreateWindow(o)
 	win.Grab = grab
 	swipeClose(win, grab)
 
-	-- tombol bulat melayang: ketuk = buka/tutup UI, seret = pindah (menempel ke sisi layar saat dilepas). posisinya diingat.
 	local fvp = workspace.CurrentCamera.ViewportSize
 	local fx0p = math.clamp(type(P.fx) == "number" and P.fx or 36, 36, math.max(36, fvp.X - 36))
 	local fy0p = math.clamp(type(P.fy) == "number" and P.fy or 100, 36, math.max(36, fvp.Y - 36))
@@ -2044,7 +1936,6 @@ function Senja:CreateWindow(o)
 		if not gpd and i.KeyCode == win.ToggleKey then win:Toggle() end
 	end)
 
-	-- tiap 10 detik: ikon di header (saat UI terbuka) dan di tombol bulat (saat terlihat) bergerak bersamaan
 	task.spawn(function()
 		while gui.Parent do
 			task.wait(10)
@@ -2053,13 +1944,11 @@ function Senja:CreateWindow(o)
 		end
 	end)
 
-	-- layar diputar / berubah ukuran: window dan tombol bulat ikut menyesuaikan
 	win:_c(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
 		win:_fit()
 		local v = workspace.CurrentCamera.ViewportSize
 		fab.Position = UDim2.fromOffset(fabRight and v.X - 36 or 36, math.clamp(fab.Position.Y.Offset, 36, math.max(36, v.Y - 36)))
 	end)
-	-- simpan otomatis config (hanya aktif kalau "Muat & simpan otomatis" menyala dan Win:AutoLoad() sudah dipanggil)
 	task.spawn(function()
 		while gui.Parent do
 			task.wait(15)
@@ -2067,7 +1956,6 @@ function Senja:CreateWindow(o)
 		end
 	end)
 
-	-- pengaturan tetap: halaman bawaan yang dibuka lewat tombol gerigi di header, bukan lewat bilah tab
 	local st = win:_newPage()
 	st.IsSettings, st.Index = true, 1e6
 	st._paint = function(sel, inst)
@@ -2078,7 +1966,6 @@ function Senja:CreateWindow(o)
 	Hooks[#Hooks + 1] = function() st._paint(win.Current == st, true) end
 	win.Settings = st
 	win:_buildSettings(st)
-	-- tema / aksen yang berubah (dari mana pun) ikut tersimpan
 	Senja:OnTheme(function()
 		if not win.Live then return end
 		pref("theme", CurName)
@@ -2105,27 +1992,26 @@ end
 return Senja
 end)()
 
-
 local Win = Senja:CreateWindow({
 	Title = "Senja Hub",
 	Subtitle = "build 2.10",
-	Theme = "Hitam",            -- Hitam | Jingga | Biru | Hijau | Ungu | Merah | Mawar | Aqua
+	Theme = "Black",
 	ToggleKey = Enum.KeyCode.RightShift,
 })
 
-local Utama = Win:AddTab({Title = "Utama", Icon = "home"})
-local Tempur = Win:AddTab({Title = "Tempur", Icon = "sword"})
+local MainTab = Win:AddTab({Title = "Main", Icon = "home"})
+local Combat = Win:AddTab({Title = "Combat", Icon = "sword"})
 local Visual = Win:AddTab({Title = "Visual", Icon = "eye"})
 
-local gerak = Utama:AddSection("Pergerakan")
+local movement = MainTab:AddSection("Movement")
 
-gerak:AddSlider({Title = "WalkSpeed", Description = "kecepatan jalan karakter", Min = 16, Max = 200, Default = 16, Flag = "ws",
+movement:AddSlider({Title = "WalkSpeed", Description = "character walking speed", Min = 16, Max = 200, Default = 16, Flag = "ws",
 	Callback = function(v)
 		local h = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 		if h then h.WalkSpeed = v end
 	end})
 
-gerak:AddToggle({Title = "Infinite Jump", Flag = "ij", Callback = function(v) getgenv().IJ = v end})
+movement:AddToggle({Title = "Infinite Jump", Flag = "ij", Callback = function(v) getgenv().IJ = v end})
 game:GetService("UserInputService").JumpRequest:Connect(function()
 	if getgenv().IJ then
 		local h = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -2133,30 +2019,28 @@ game:GetService("UserInputService").JumpRequest:Connect(function()
 	end
 end)
 
-gerak:AddButton({Title = "Reset karakter", Icon = "bolt", Callback = function()
+movement:AddButton({Title = "Reset character", Icon = "bolt", Callback = function()
 	local h = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	if h then h.Health = 0 end
-	Senja:Notify({Title = "Karakter di-reset", Type = "warn"})
+	Senja:Notify({Title = "Character reset", Type = "warn"})
 end})
 
-local info = Utama:AddSection({Title = "Info", Open = false})
-info:AddLabel({Title = "Cara pakai", Description = "ketuk judul section untuk melipat/membuka. ketuk ikon kaca pembesar di kanan atas untuk mencari fitur."})
-info:AddInput({Title = "Catatan", Placeholder = "tulis apa aja", Flag = "note", Callback = function(t, enter) if enter then print(t) end end})
+local info = MainTab:AddSection({Title = "Info", Open = false})
+info:AddLabel({Title = "How to use", Description = "tap a section title to collapse/expand it. tap the magnifier icon at the top right to search for features."})
+info:AddInput({Title = "Notes", Placeholder = "write anything", Flag = "note", Callback = function(t, enter) if enter then print(t) end end})
 
--- contoh sub tab: bar kecil di atas halaman. tab yang punya sub tab hanya menampilkan sub tab-nya.
-local Aim = Tempur:AddSubTab({Title = "Aim"})
-local Filter = Tempur:AddSubTab({Title = "Filter"})
+local Aim = Combat:AddSubTab({Title = "Aim"})
+local Filter = Combat:AddSubTab({Title = "Filter"})
 
 local t = Aim:AddSection("Target")
-t:AddDropdown({Title = "Bagian tubuh", Values = {"Head", "HumanoidRootPart", "Torso"}, Default = "Head", Flag = "part"})
-t:AddKeybind({Title = "Aktifkan aim", Default = Enum.KeyCode.E, Mode = "Toggle", Callback = function(on) print("aim", on) end, Flag = "aimkey"})
+t:AddDropdown({Title = "Body part", Values = {"Head", "HumanoidRootPart", "Torso"}, Default = "Head", Flag = "part"})
+t:AddKeybind({Title = "Enable aim", Default = Enum.KeyCode.E, Mode = "Toggle", Callback = function(on) print("aim", on) end, Flag = "aimkey"})
 
-local f = Filter:AddSection("Tim")
-f:AddDropdown({Title = "Filter tim", Values = {"Musuh", "Teman", "Netral", "NPC"}, Multi = true, Search = true, Flag = "tim"})
+local f = Filter:AddSection("Team")
+f:AddDropdown({Title = "Team filter", Values = {"Enemy", "Friend", "Neutral", "NPC"}, Multi = true, Search = true, Flag = "team"})
 
-local v = Visual:AddSection("Warna")
-v:AddColorPicker({Title = "Warna ESP", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
+local v = Visual:AddSection("Color")
+v:AddColorPicker({Title = "ESP color", Default = Color3.fromRGB(255, 138, 61), Flag = "esp", Callback = function(c) print(c) end})
 
--- pengaturan (tema, ukuran, tombol melayang, keybind, simpan/muat config, anti afk) sudah bawaan: tombol gerigi di header
+Win:AutoLoad()
 
-Win:AutoLoad()   -- muat config otomatis (kalau diaktifkan di Pengaturan). taruh di akhir, setelah semua elemen dibuat
